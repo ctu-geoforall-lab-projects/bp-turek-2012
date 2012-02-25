@@ -1,18 +1,18 @@
 import grass.script as grass
 import xml.etree.ElementTree as etree
 from urllib2 import urlopen
+from osgeo import gdal
+from osgeo import gdalconst
+from osgeo import osr
+import subprocess
 
 class WMS:
 
-    def __init__(self):
-        self.bboxes = []
-
-
     def run(self, options, flags):
-
+       
         self.__initializeParameters(options, flags)
-        self.__computeTiles()
-	self.__downloadTiles()
+        self.__computeRegion()
+        self.__downloadTiles()
 	self.__createOutputMapFromTiles()
 
 
@@ -20,33 +20,25 @@ class WMS:
 
         self.o_mapserver_url = options['mapserver_url'] + "?"
         self.o_wms_version = options['wms_version']
- 	self.f_no_check_param = flags["c"]
-
-	if not self.f_no_check_param:
-	    cap_xml = self.__getCapabilities()
-            cap_xml_capability = cap_xml.find('Capability')
-
-#	grass.message(_(etree.tostring(cap_xml_service, "utf-8")))
         self.o_layers = options['layers']
         self.o_styles = options['styles']
         self.o_srs = options['srs']
         self.o_map_res_x = options['map_res_x']
         self.o_map_res_y = options['map_res_y']
         self.o_output = options['output'] 
-	cap_xml_service = cap_xml.find('Service')
-
-   # check if given region exists      
-	if options['region']:
+ 	self.f_get_cap = flags["c"]
+        self.tiles = []
+        # check if given region exists      
+	if options['region']: ##TODO, 
             if not grass.find_file(name = options['region'], element = 'windows')['name']:
                 grass.fatal(_("Region <%s> not found") % options['region'])
 
-        # if the user asserts that this projection is the same as the
-        # source use this projection as the source to get a trivial
-        # tiling from r.tileset
-     
-        self.proj_srs = grass.read_command('g.proj', flags='j', epsg =self.o_srs )
-        self.srs_scale = int((grass.parse_key_val(self.proj_srs))['+to_meter'])
-      
+        ##proc tam musi byt rstrip
+        self.proj_srs = grass.read_command('g.proj', 
+                                           flags='jf', 
+                                           epsg =self.o_srs ).rstrip('\n')
+        self.proj_location = grass.read_command('g.proj', 
+                                                flags='jf').rstrip('\n')
 
     def __getCapabilities(self):
 
@@ -54,8 +46,7 @@ class WMS:
         cap_url_param = "service=WMS&request=GetCapabilities&version=" + self.o_wms_version
         cap_url = self.o_mapserver_url + cap_url_param 
         try:
-  		## TODO druhy argument funkce (mozna ulozeni souboru)
-                cap_file = urlopen(cap_url, )
+                cap_file = urlopen(cap_url )
         except IOError:
             grass.fatal(_("Unable to get capabilities of '%s'") % self.o_mapserver_url)
 
@@ -67,43 +58,56 @@ class WMS:
 	cap_xml_service_name = cap_xml_service.find('Name')
 	if cap_xml_service_name.text != 'WMS':
             grass.fatal(_("Unable to get capabilities: %s") %  cap_url)		
-
 	return cap_xml
 
 
-    def __computeTiles(self):
-   
-	grass.message(_("Calculating tiles..."))
-     
-        if self.proj_srs ==  grass.read_command('g.proj', flags='j'):	
-            region = grass.region()
-            bbox = {'n': str(region['n']), 's': str(region['s']), 'e': str(region['e']), 'w': str(region['w']), 'rows': str(region['rows']), 'cols': str(region['cols']) }
-            self.bboxes.append(bbox)
-        else:
-            tiles = grass.read_command('r.tileset',
-                                flags = 'g',
-                                sourceproj =  '+init=epsg:32633' ,
-                                sourcescale = 1,
-                                overlap = 2,
-                                maxcols = 1000,
-                                maxrows = 1000) ## TODO maxcols, maxrows
+    def __computeRegion(self):
 
-            tiles = tiles.splitlines()
-            for tile in tiles:           
-                dtile = grass.parse_key_val(tile, vsep=';')
-                n = dtile['n']
-                s = dtile['s']
-                e = dtile['e']
-                w = dtile['w']
-                nr =dtile['rows']
-                nc =dtile['cols']
-   
-                bbox = {'n': n, 's': s, 'e': e, 'w': w, 'rows': nr, 'cols': nc}
-                self.bboxes.append(bbox)
+	region = grass.region()
+        self.bbox = dict({'n' : '', 's' : '', 'e' : '', 'w' : ''});
 
+        if self.proj_srs ==  self.proj_location:
+            for param in self.bbox:
+                self.bbox[param] = str(region[param])
+        ## zde se, pokud se lisi projekce wms a lokace, vypocita novy region, ktery vznikne transformaci regionu do zobrazeni wms a z techto ctyr transformovanych bodu se vyberou dva ktere maji extremni souradnice
+        else:           
+            tmp_file_region_path = grass.tempfile()
+            if  tmp_file_region_path is None:
+                 grass.fatal("Unable to create temporary files")
+            tmp_file_region = open( tmp_file_region_path, 'w')
+            tmp_file_region.write("%f %f\n%f %f\n%f %f\n%f %f\n"  %\
+                                   (region['e'], region['n'],\
+                                    region['w'], region['n'],\
+                                    region['w'], region['s'],\
+                                    region['e'], region['s'] ) )
+            tmp_file_region.close()
+            points = grass.read_command('m.proj', flags = 'd',
+                                    proj_output = self.proj_srs,
+                                    proj_input = self.proj_location,
+                                    input =  tmp_file_region_path)
+            points = points.splitlines()
+            for point in points:
+                point = point.split("|")
+                if not self.bbox['n']:
+                    self.bbox['n'] = point[1]
+                    self.bbox['s'] = point[1]
+                    self.bbox['e'] = point[0]
+                    self.bbox['w'] = point[0]
+                    continue
+
+                if   float(self.bbox['n']) < float(point[1]):
+                    self.bbox['n'] = point[1]
+                elif float(self.bbox['s']) > float(point[1]):
+                    self.bbox['s'] = point[1]
+
+                if   float(self.bbox['e']) < float(point[0]):
+                    self.bbox['e'] = point[0]
+                elif float(self.bbox['w']) > float(point[0]):
+                    self.bbox['w'] = point[0]  
 
     def __downloadTiles(self):
-
+        ## vysledkem bude 1 tile, protoze o tilovani se nam uz postara gdal wms driver
+        ## u modulu bez wms driveru muze byt vysledkem vice tilu,  proto nazev   __downloadTiles 
         gdal_wms = etree.Element("GDAL_WMS")
         service = etree.SubElement(gdal_wms, "Service")
         name = etree.Element("name")
@@ -118,11 +122,11 @@ class WMS:
         elif self.o_wms_version == "1.3.0":
             srs = etree.SubElement(service, "CRS")
         else: 
-            grass.error("Wrong wms_version")
+            grass.error("Unsupported wms version")
         srs.text = 'EPSG:' + self.o_srs
 
         image_format = etree.SubElement(service, "ImageFormat")
-        image_format.text = "image/jpeg"
+        image_format.text = "image/jpeg"#TODO!!
 
         layers = etree.SubElement(service, "Layers")
         layers.text =self.o_layers
@@ -132,66 +136,90 @@ class WMS:
 
         data_window = etree.SubElement(gdal_wms, "DataWindow")
     
-        i = 1
-        ##TODO jak prepsat obsah temfpile
         self.xml_file = grass.tempfile()
-	for bbox in self.bboxes:
 
-            upper_left_x = etree.SubElement(data_window, "UpperLeftX")
-            upper_left_x.text = bbox['w'] #"197613"
+        upper_left_x = etree.SubElement(data_window, "UpperLeftX")
+        upper_left_x.text = self.bbox['w'] 
 
-            upper_left_y = etree.SubElement(data_window, "UpperLeftY")
-            upper_left_y.text = bbox['n'] #"5784919"
+        upper_left_y = etree.SubElement(data_window, "UpperLeftY")
+        upper_left_y.text = self.bbox['n'] 
 
-            lower_right_x = etree.SubElement(data_window, "LowerRightX")
-            lower_right_x.text = bbox['e'] #"891648"
+        lower_right_x = etree.SubElement(data_window, "LowerRightX")
+        lower_right_x.text = self.bbox['e'] 
 
-            lower_right_y = etree.SubElement(data_window, "LowerRightY")
-            lower_right_y.text = bbox['s'] #"5295313"
+        lower_right_y = etree.SubElement(data_window, "LowerRightY")
+        lower_right_y.text = self.bbox['s']
 
-            size_x = etree.SubElement(data_window, "SizeX")
-            size_x.text = "1000" #!! 
+        size_x = etree.SubElement(data_window, "SizeX")
+        size_x.text = self.o_map_res_x 
 
-            size_y = etree.SubElement(data_window, "SizeY")
-            size_y.text = "1000"
+        size_y = etree.SubElement(data_window, "SizeY")
+        size_y.text = self.o_map_res_y 
 
-            block_size_x = etree.SubElement(gdal_wms, "BlockSizeX")
-            block_size_x.text = "400"
+        block_size_x = etree.SubElement(gdal_wms, "BlockSizeX")
+        block_size_x.text = "400" #TODO!!
 
-            block_size_y = etree.SubElement(gdal_wms, "BlockSizeY")
-            block_size_y.text = "300"
+        block_size_y = etree.SubElement(gdal_wms, "BlockSizeY")
+        block_size_y.text = "300"
 
- 
-            if self.xml_file is None:
-                grass.fatal("Unable to create temporary files")
-            etree.ElementTree(gdal_wms).write(self.xml_file)
-        
-            #dataset = gdal.Open( filename, GA_ReadOnly )
+        xml_file = grass.tempfile()
+        if xml_file is None:
+            grass.fatal("Unable to create temporary files")
+        etree.ElementTree(gdal_wms).write(xml_file)
 
-             #TODO gdal PYTHON bindings, az pak se pouzije r.in.gdal
-            if grass.run_command(
-                'r.in.gdal',
-                input = self.xml_file,
-                output = self.o_output + '_tile_' + str(i),
-                flags = 'k'
-            ) != 0:
-                grass.fatal(_('r.in.gdal failed'))
-            i = i + 1
-   
+        tile = grass.tempfile()
+        if xml_file is None:
+            grass.fatal("Unable to create temporary files")
+
+        wms_dataset = gdal.Open( xml_file, gdal.GA_ReadOnly )
+        if wms_dataset is None:
+            grass.fatal("can not open wms driver")  
+      
+        #TODO!!
+        format = "GTiff"
+        driver = gdal.GetDriverByName( format )
+        if wms_dataset is None:
+            grass.fatal("can not find %s driver" % format)  
+        tile_driver = driver.CreateCopy( tile, wms_dataset, 0 )
+        if wms_dataset is None:
+            grass.fatal("can not open %s driver" % format)   
+        tile_driver  = None
+        wms_dataset = None
+
+        self.tiles.append(tile)
+
      
     def __createOutputMapFromTiles(self): 
+       
+        for tile in self.tiles:
+            if self.proj_srs !=  self.proj_location:
+                warptile = grass.tempfile()
+                # neni python binding pro gdal warp,  aspon to pisou tady: http://www.gdal.org/warptut.html
+                ps = subprocess.Popen(['gdalwarp',
+                                       '-s_srs', '%s' % self.proj_srs,
+                                       '-t_srs', '%s' % self.proj_location,
+                                       '-r', 'near',
+                                       tile, warptile])
+                ps.wait()
+                if ps.returncode != 0:
+                    grass.fatal(_('gdalwarp failed'))
+            else:
+                warptile = tile
+
+            if grass.run_command('r.in.gdal',
+                                 input = warptile,
+                                 output = self.o_output + '_tile_' + '1',
+                                 flags = 'k') != 0:
+                grass.fatal(_('r.in.gdal failed'))
+
     
-        i = 1
-	for bbox in self.bboxes:  
-    
-            #TODO spustit jen kdyz budou vraceny kanalay rgb  
-            if grass.run_command(
-                'r.composite',
-                red =self.o_output + '_tile_' + str(i) + '.1',
-                green =self.o_output + '_tile_' + str(i) + '.2',
-                blue =self.o_output + '_tile_' + str(i) + '.3',
-                output = self.o_output + '_tile_' + str(i)
-            ) != 0:
+        #TODO r.patch  - bude potreba az pro driver bez gdal wms
+        i = 1  
+        if grass.run_command('r.composite',
+                             red =self.o_output + '_tile_' + str(i) + '.1',
+                             green =self.o_output + '_tile_' + str(i) + '.2',
+                             blue =self.o_output + '_tile_' + str(i) + '.3',
+                             output = self.o_output ) != 0:
                 grass.fatal(_('r.composite failed'))
 
-            i = i + 1
+

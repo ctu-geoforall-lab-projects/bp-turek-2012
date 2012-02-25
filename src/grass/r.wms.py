@@ -1,17 +1,17 @@
 #!/usr/bin/env python
 """
-43    MODULE:    r.wms
-44    
-45    AUTHOR(S): Stepan Turek <stepan.turek AT seznam.cz>
-46    
-47    PURPOSE:   Describe your script here...
-48    
-49    COPYRIGHT: (C) 2012 Stepan Turek, and by the GRASS Development Team
-50    
-51               This program is free software under the GNU General Public
-52               License (>=v2). Read the file COPYING that comes with GRASS
-53               for details.
-54    """
+    MODULE:    r.wms
+    
+    AUTHOR(S): Stepan Turek <stepan.turek AT seznam.cz>
+    
+    PURPOSE:   Describe your script here...
+    
+    COPYRIGHT: (C) 2012 Stepan Turek, and by the GRASS Development Team
+    
+               This program is free software under the GNU General Public
+               License (>=v2). Read the file COPYING that comes with GRASS
+               for details.
+    """
 
 #%module
 #% description: WMS 
@@ -112,14 +112,13 @@
 
 #%flag
 #% key: c
-#% description: Don't check parameters with GetCapabilities
+#% description: Get capabilities
 #% guisection: Request
 #%end
 
+
 import sys
-import urllib
 import atexit
-import xml.etree.ElementTree as etree
 
 import grass.script as grass
 
@@ -128,7 +127,7 @@ from wms_base import WMS
 def cleanup():
     maps = []
     for suffix in ('1', '2', '3'):
-        rast = options['output'] + '_tile_' + '1' + suffix
+        rast = options['output'] + '_tile_' + '1.' + suffix
         if grass.find_file(rast, element = 'cell', mapset = '.')['file']:
             maps.append(rast)
     
