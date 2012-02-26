@@ -122,7 +122,7 @@ import atexit
 
 import grass.script as grass
 
-from wms_base import WMS
+from wms_gdal import WMSGDAL
 
 def cleanup():
     maps = []
@@ -137,7 +137,7 @@ def cleanup():
                           rast = ','.join(maps))
     
 def main():
-    pokus = WMS()
+    pokus = WMSGDAL()
     pokus.run(options, flags)
     return 0
 
