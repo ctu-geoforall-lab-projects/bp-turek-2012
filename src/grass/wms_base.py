@@ -18,7 +18,6 @@ class WMS:
         self.o_output = options['output'] 
         self.o_region = options['region']
  	self.f_get_cap = flags["c"]
-        self.tiles = []
         # check if given region exists 
         self.region = []     
 	if self.o_region:                 
@@ -105,40 +104,34 @@ class WMS:
                     self.bbox['w'] = point[0]  
 
      
-    def _createOutputMapFromTiles(self): 
+    def _createOutputMap(self): 
        
-        i = 1
-        for tile in self.tiles:
-            if self.proj_srs !=  self.proj_location:
-                warptile = grass.tempfile()
-                # neni python binding pro gdal warp,  aspon to pisou tady: http://www.gdal.org/warptut.html
-                ps = subprocess.Popen(['gdalwarp',
-                                       '-s_srs', '%s' % self.proj_srs,
-                                       '-t_srs', '%s' % self.proj_location,
-                                       '-r', 'near',
-                                       tile, warptile])
-                ps.wait()
-                if ps.returncode != 0:
-                    grass.fatal(_('gdalwarp failed'))
-            else:
-                warptile = tile
+        if self.proj_srs !=  self.proj_location:
+            temp_warpmap = grass.tempfile()
+            # neni python binding pro gdal warp,  aspon to pisou tady: http://www.gdal.org/warptut.html
+            ps = subprocess.Popen(['gdalwarp',
+                                   '-s_srs', '%s' % self.proj_srs,
+                                   '-t_srs', '%s' % self.proj_location,
+                                   '-r', 'near',
+                                   self.temp_map, temp_warpmap])
+            ps.wait()
+            if ps.returncode != 0:
+                grass.fatal(_('gdalwarp failed'))
+        else:
+            temp_warpmap = self.temp_map
 
-            if grass.run_command('r.in.gdal',
-                                 input = warptile,
-                                 output = self.o_output + '_tile_' + str(i),
-                                 flags = 'k') != 0:
-                grass.fatal(_('r.in.gdal failed'))
-            grass.try_remove(tile)
-            grass.try_remove(warptile)
-            i = i + 1
+        if grass.run_command('r.in.gdal',
+                             input = temp_warpmap,
+                             output = self.o_output,
+                             flags = 'k') != 0:
+            grass.fatal(_('r.in.gdal failed'))
+        grass.try_remove(self.temp_map)
+        grass.try_remove(temp_warpmap)
 
-    
-        #TODO r.patch  - bude potreba az pro driver bez gdal wms
-        i = 1  
         if grass.run_command('r.composite',
-                             red =self.o_output + '_tile_' + str(i) + '.1',
-                             green =self.o_output + '_tile_' + str(i) + '.2',
-                             blue =self.o_output + '_tile_' + str(i) + '.3',
+                             red =self.o_output + '.1',
+                             green =self.o_output +  '.2',
+                             blue =self.o_output + '.3',
                              output = self.o_output ) != 0:
                 grass.fatal(_('r.composite failed'))
 

@@ -10,13 +10,12 @@ class WMSGDAL(WMS):
        
         self._initializeParameters(options, flags)
         self._computeRegion()
-        self._downloadTiles()
-	self._createOutputMapFromTiles()
+        self._download()
+	self._createOutputMap()
 
 
-    def _downloadTiles(self):
-        ## vysledkem bude 1 tile, protoze o tilovani se nam uz postara gdal wms driver
-        ## u modulu bez wms driveru muze byt vysledkem vice tilu,  proto nazev   __downloadTiles 
+    def _download(self):
+        ## stahne mapu z wms serveru pomoci gdal wms driveru, a tu pak ulozi do docasneho souboru temp_map
         gdal_wms = etree.Element("GDAL_WMS")
         service = etree.SubElement(gdal_wms, "Service")
         name = etree.Element("name")
@@ -76,8 +75,8 @@ class WMSGDAL(WMS):
             grass.fatal("Unable to create temporary files")
         etree.ElementTree(gdal_wms).write(xml_file)
 
-        tile = grass.tempfile()
-        if xml_file is None:
+        self.temp_map = grass.tempfile()
+        if self.temp_map is None:
             grass.fatal("Unable to create temporary files")
 
         wms_dataset = gdal.Open( xml_file, gdal.GA_ReadOnly )
@@ -90,14 +89,14 @@ class WMSGDAL(WMS):
         driver = gdal.GetDriverByName( format )
         if wms_dataset is None:
             grass.fatal("can not find %s driver" % format)  
-        tile_driver = driver.CreateCopy( tile, wms_dataset, 0 )
+        tile_driver = driver.CreateCopy( self.temp_map, wms_dataset, 0 )
         if wms_dataset is None:
             grass.fatal("can not open %s driver" % format)   
         tile_driver  = None
         wms_dataset = None
 
-        self.tiles.append(tile)
+        
 
  
 
-             #TODO gdal PYTHON bindings, az pak se pouzije r.in.gdal
+

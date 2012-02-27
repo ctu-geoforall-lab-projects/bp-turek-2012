@@ -126,8 +126,8 @@ from wms_gdal import WMSGDAL
 
 def cleanup():
     maps = []
-    for suffix in ('1', '2', '3'):
-        rast = options['output'] + '_tile_' + '1.' + suffix
+    for suffix in ('.1', '.2', '.3'):
+        rast = options['output'] + suffix
         if grass.find_file(rast, element = 'cell', mapset = '.')['file']:
             maps.append(rast)
     
