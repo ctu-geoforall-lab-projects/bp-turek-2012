@@ -137,8 +137,7 @@ def cleanup():
                           rast = ','.join(maps))
     
 def main():
-    pokus = WMSGDAL()
-    pokus.run(options, flags)
+    pokus = WMSGDAL(options, flags)
     return 0
 
 if __name__ == "__main__":

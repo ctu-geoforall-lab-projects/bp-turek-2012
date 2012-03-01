@@ -6,16 +6,20 @@ import xml.etree.ElementTree as etree
 
 class WMSGDAL(WMS):
 
-    def run(self, options, flags):
-       
-        self._initializeParameters(options, flags)
-        self._computeRegion()
-        self._download()
+    def __init__(self, options, flags):
+        WMS.__init__(self, options, flags)
+        self.bbox = self._computeRegion()
+        self.temp_map = self._download()
 	self._createOutputMap()
 
+    def __del__(self):
+        pass
 
-    def _download(self):
-        ## stahne mapu z wms serveru pomoci gdal wms driveru, a tu pak ulozi do docasneho souboru temp_map
+    def _createXML(self):
+        """!Create XML for GDAL WMS driver
+
+        @return path to XML file
+        """
         gdal_wms = etree.Element("GDAL_WMS")
         service = etree.SubElement(gdal_wms, "Service")
         name = etree.Element("name")
@@ -75,28 +79,31 @@ class WMSGDAL(WMS):
             grass.fatal("Unable to create temporary files")
         etree.ElementTree(gdal_wms).write(xml_file)
 
-        self.temp_map = grass.tempfile()
-        if self.temp_map is None:
+        return xml_file
+    
+    def _download(self):
+        """!Downloads data from WMS server using GDAL WMS driver,
+        store fetched data into temp file (self.temp_map)
+        """
+        temp_map = grass.tempfile()
+        if temp_map is None:
             grass.fatal("Unable to create temporary files")
 
-        wms_dataset = gdal.Open( xml_file, gdal.GA_ReadOnly )
+        xml_file = self._createXML()
+        wms_dataset = gdal.Open(xml_file, gdal.GA_ReadOnly)
         grass.try_remove(xml_file)
         if wms_dataset is None:
-            grass.fatal("can not open wms driver")  
-
+            grass.fatal(_("Unable to open GDAL WMS driver"))
+        
         #TODO!!
         format = "GTiff"
-        driver = gdal.GetDriverByName( format )
+        driver = gdal.GetDriverByName(format)
         if wms_dataset is None:
             grass.fatal("can not find %s driver" % format)  
-        tile_driver = driver.CreateCopy( self.temp_map, wms_dataset, 0 )
+        tile_driver = driver.CreateCopy(temp_map, wms_dataset, 0)
         if wms_dataset is None:
             grass.fatal("can not open %s driver" % format)   
         tile_driver  = None
         wms_dataset = None
 
-        
-
- 
-
-
+        return temp_map
