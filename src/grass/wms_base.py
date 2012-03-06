@@ -1,27 +1,36 @@
 import subprocess
 from urllib2 import urlopen
 import grass.script as grass
-try:
-    from grass.libs import gis as gislib
-except ImportError, e:
-    gislib = None
-    gislib_error = e
+#try:
+#    from grass.libs import gis as gislib
+#except ImportError, e:
+#    gislib = None
+#    gislib_error = e
 
 class WMS:
     
     def __init__(self, options, flags):
         
         self.o_mapserver_url = options['mapserver_url'] + "?"
-        self.o_wms_version = options['wms_version']
         self.o_layers = options['layers']
         self.o_styles = options['styles']
         self.o_srs = options['srs']
-        self.o_map_res_x = options['map_res_x']
+        self.o_map_res_x = options['map_res_x'] ## TODO convert to int???
         self.o_map_res_y = options['map_res_y']
         self.o_output = options['output'] 
         self.o_region = options['region']
  	self.f_get_cap = flags["c"]
         
+        self.o_wms_version = options['wms_version']        
+        if self.o_wms_version == "1.1.1":
+            self.projection_name = "SRS"
+        elif self.o_wms_version == "1.3.0":
+            self.projection_name = "CRS"
+        else: 
+            grass.error("Unsupported wms version")
+
+        self.tile_x_size = 400
+        self.tile_y_size = 300
         self.bbox = None # region extent for WMS query
         
 	if self.o_region:                 
@@ -40,6 +49,7 @@ class WMS:
 
     def __del__(self):
         # obnovit puvodni region pokud je to treba
+        pass
         
     def _getCapabilities(self):
         """!Get capabilities from WMS server
@@ -67,13 +77,13 @@ class WMS:
         
 	return cap_xml
 
-    def _computeRegion(self):
+    def _computeBbox(self):
         """!Get region extent for WMS query (bbox)
         """
         if self.o_region:
             grass.run_command('g.region',
                               quiet = True,
-                              region = self.o_region) ## nastavit zpatky puvodni?
+                              region = self.o_region) ##TODO nastavit zpatky puvodni
         
  	region = grass.region()
         
@@ -89,7 +99,7 @@ class WMS:
         else:
             tmp_file_region_path = grass.tempfile()
             if tmp_file_region_path is None:
-                grass.fatal("Unable to create temporary files")
+                grass.fatal(_("Unable to create temporary files"))
             tmp_file_region = open(tmp_file_region_path, 'w')
             tmp_file_region.write("%f %f\n%f %f\n%f %f\n%f %f\n"  %\
                                    (region['e'], region['n'],\
@@ -132,12 +142,12 @@ class WMS:
         return bbox
 
     def _createOutputMap(self): 
-       """!Import downloaded data into GRASS, reproject data if needed
-       using gdalwarp
-       """
+        """!Import downloaded data into GRASS, reproject data if needed
+        using gdalwarp
+        """
         if self.proj_srs != self.proj_location: # TODO: do it better
             temp_warpmap = grass.tempfile()
-            # neni python binding pro gdal warp, aspon to pisou tady: http://www.gdal.org/warptut.html
+
             ps = subprocess.Popen(['gdalwarp',
                                    '-s_srs', '%s' % self.proj_srs,
                                    '-t_srs', '%s' % self.proj_location,

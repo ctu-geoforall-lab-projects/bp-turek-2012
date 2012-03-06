@@ -116,15 +116,22 @@
 #% guisection: Request
 #%end
 
+#%flag
+#% key: g
+#% description: Do not use gdal driver
+#% guisection: Request
+#%end
+
 
 import sys
 import atexit
 
 import grass.script as grass
 
-from wms_gdal import WMSGDAL
+from wms_drv import WMSDRV
+from wms_gdal_drv import WMSGDALDRV
 
-def cleanup():
+def cleanup(): 
     maps = []
     for suffix in ('.1', '.2', '.3'):
         rast = options['output'] + suffix
@@ -137,7 +144,11 @@ def cleanup():
                           rast = ','.join(maps))
     
 def main():
-    pokus = WMSGDAL(options, flags)
+    
+    if flags['g']:
+        WMSDRV(options, flags)
+    else:
+        WMSGDALDRV(options, flags)
     return 0
 
 if __name__ == "__main__":
