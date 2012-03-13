@@ -1,3 +1,4 @@
+
 import subprocess
 from urllib2 import urlopen
 import grass.script as grass
@@ -7,19 +8,34 @@ import grass.script as grass
 #    gislib = None
 #    gislib_error = e
 
-class WMS:
+class WMSBASE:
+
+    def run(self, options, flags):
+
+        self._initialize_parameters(options, flags)
+        self.bbox = self._computeBbox()
+        self.temp_map = self._download()
+	self._createOutputMap()    
+
+    def _initialize_parameters(self, options, flags):
+
+        self.flags = flags 
+        if self.flags['t']:
+            self.transparent = 'TRUE'
+        else:
+            self.transparent = 'FALSE'   
     
-    def __init__(self, options, flags):
-        
-        self.o_mapserver_url = options['mapserver_url'] + "?"
+        self.o_wms_server_url = options['wms_server_url'] + "?"
         self.o_layers = options['layers']
         self.o_styles = options['styles']
-        self.o_srs = options['srs']
-        self.o_map_res_x = options['map_res_x'] ## TODO convert to int???
-        self.o_map_res_y = options['map_res_y']
+        self.o_srs = int(options['srs'])
+        self.o_map_res_x = int(options['map_res_x']) 
+        self.o_map_res_y = int(options['map_res_y'])
+        self.o_tile_res_x = int(options['tile_res_x']) #TODO num tiles
+        self.o_tile_res_y = int(options['tile_res_y'])
         self.o_output = options['output'] 
         self.o_region = options['region']
- 	self.f_get_cap = flags["c"]
+        self.o_bgcolor = options['bgcolor'] # supported only in wms_drv
         
         self.o_wms_version = options['wms_version']        
         if self.o_wms_version == "1.1.1":
@@ -29,18 +45,37 @@ class WMS:
         else: 
             grass.error("Unsupported wms version")
 
-        self.tile_x_size = 400
-        self.tile_y_size = 300
-        self.bbox = None # region extent for WMS query
-        
+        self.o_format = options['format']
+        if self.o_format == "geotiff":
+            self.mime_format      = "image/geotiff"
+        elif self.o_format == "tiff":
+            self.mime_format      = "image/tiff"
+        elif self.o_format == "png":
+            self.mime_format      = "image/png"
+        elif self.o_format == "jpeg":
+            self.mime_format      = "image/jpeg"
+        elif self.o_format == "gif":
+            self.mime_format      = "image/gif"
+        else:
+            grass.fatal(_("Unsupported image format %s") % self.o_format)
+
+        self.actual_region = 'wms_temp_region'
+        if grass.run_command('g.region',
+                              quiet = True,
+                              save =  self.actual_region) != 0:
+             grass.fatal(_('g.region failed'))   
+
+        self.bbox = None # region extent for WMS query  
+        self.gdal_drv_format = "GTiff"
+
 	if self.o_region:                 
             if not grass.find_file(name = self.o_region, element = 'windows', mapset = '.' )['name']:
                 grass.fatal(_("Region <%s> not found") % self.o_region)
 
         # read projection info
-        self.proj_srs =      grass.read_command('g.proj', 
-                                                flags = 'jf', 
-                                                epsg = self.o_srs).rstrip('\n')
+        self.proj_srs = grass.read_command('g.proj', 
+                                           flags = 'jf', 
+                                           epsg = str(self.o_srs) ).rstrip('\n')
         self.proj_location = grass.read_command('g.proj', 
                                                 flags='jf').rstrip('\n')
         
@@ -51,18 +86,18 @@ class WMS:
         # obnovit puvodni region pokud je to treba
         pass
         
-    def _getCapabilities(self):
+    def _getCapabilities(self): # TODO get_cap
         """!Get capabilities from WMS server
         
         @return ElementTree instance of XML cap file
         """
         # download capabilities file
         cap_url_param = "service=WMS&request=GetCapabilities&version=" + self.o_wms_version
-        cap_url = self.o_mapserver_url + cap_url_param 
+        cap_url = self.o_wms_server_url + cap_url_param 
         try:
             cap_file = urlopen(cap_url)
         except IOError:
-            grass.fatal(_("Unable to get capabilities of '%s'") % self.o_mapserver_url)
+            grass.fatal(_("Unable to get capabilities of '%s'") % self.o_wms_server_url)
 
         # check DOCTYPE first      
         if 'text/xml' not in cap_file.info()['content-type']:
@@ -80,10 +115,13 @@ class WMS:
     def _computeBbox(self):
         """!Get region extent for WMS query (bbox)
         """
+        
         if self.o_region:
-            grass.run_command('g.region',
+                                       #todo WIND_OVERRIDE 
+            if grass.run_command('g.region',
                               quiet = True,
-                              region = self.o_region) ##TODO nastavit zpatky puvodni
+                              region = self.o_region) != 0:
+                grass.fatal(_('g.region failed'))           
         
  	region = grass.region()
         
@@ -146,8 +184,8 @@ class WMS:
         using gdalwarp
         """
         if self.proj_srs != self.proj_location: # TODO: do it better
-            temp_warpmap = grass.tempfile()
 
+            temp_warpmap = grass.tempfile()
             ps = subprocess.Popen(['gdalwarp',
                                    '-s_srs', '%s' % self.proj_srs,
                                    '-t_srs', '%s' % self.proj_location,
@@ -161,17 +199,33 @@ class WMS:
 
         if grass.run_command('r.in.gdal',
                              input = temp_warpmap,
-                             output = self.o_output,
-                             flags = 'k') != 0:
+                             output = self.o_output) != 0:
             grass.fatal(_('r.in.gdal failed'))
+
         grass.try_remove(self.temp_map)
         grass.try_remove(temp_warpmap)
+
+        if grass.run_command('g.region',
+                              quiet = True,
+                              rast =  self.o_output + '.red') != 0: #TODO grey...
+                 grass.fatal(_('g.region failed'))   
         
         if grass.run_command('r.composite',
-                             red =self.o_output + '.1',
-                             green = self.o_output +  '.2',
-                             blue = self.o_output + '.3',
+                             red =self.o_output + '.red',
+                             green = self.o_output +  '.green',
+                             blue = self.o_output + '.blue',
                              output = self.o_output ) != 0:
                 grass.fatal(_('r.composite failed'))
-                
+
+        ##TODO r.null
+        
+    def cleanup(self):
+         region = grass.find_file(name = self.actual_region, element = 'windows', mapset = '.' )
+         if region is not None:
+            if  grass.run_command('g.region',
+                                   quiet = True,
+                                   region = self.actual_region) != 0:
+                     grass.fatal(_('g.region failed'))           
+            grass.try_remove(region['file'])
+
 
