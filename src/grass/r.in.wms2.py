@@ -147,6 +147,7 @@ def main():
     if flags['d']:
         wms = WMSDRV()
     else:
+        grass.debug("Using GDAL WMS driver")
         wms = WMSGDALDRV()
     
     #atexit.register(wms.cleanup)

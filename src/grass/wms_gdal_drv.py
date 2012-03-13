@@ -17,6 +17,8 @@ class WMSGDALDRV(WMSBASE):
 
         @return path to XML file
         """
+        self._debug("_createXML", "started")
+        
         gdal_wms = etree.Element("GDAL_WMS")
         service = etree.SubElement(gdal_wms, "Service")
         name = etree.Element("name")
@@ -74,6 +76,8 @@ class WMSGDALDRV(WMSBASE):
             grass.fatal(_("Unable to create temporary files"))
         etree.ElementTree(gdal_wms).write(xml_file)
 
+        self._debug("_createXML", "finished -> %s" % xml_file)
+        
         return xml_file
     
     def _download(self):
@@ -81,6 +85,7 @@ class WMSGDALDRV(WMSBASE):
 
         @return temp_map with stored downloaded data
         """
+        self._debug("_download", "started")
         temp_map = grass.tempfile()
         if temp_map is None:
             grass.fatal(_("Unable to create temporary files"))
@@ -91,15 +96,18 @@ class WMSGDALDRV(WMSBASE):
         if wms_dataset is None:
             grass.fatal(_("Unable to open GDAL WMS driver"))
 
+        self._debug("_download", "GDAL dataset created")
+        
         driver = gdal.GetDriverByName(self.gdal_drv_format)
         if driver is None:
             grass.fatal(_("Unable to find %s driver" % format))
 
         metadata = driver.GetMetadata()
-        if not metadata.has_key(gdal.DCAP_CREATECOPY)   or\
+        if not metadata.has_key(gdal.DCAP_CREATECOPY) or \
            metadata[gdal.DCAP_CREATECOPY] == 'NO':
             grass.fatal(_('Driver %s supports CreateCopy() method.') % self.gdal_drv_name)
 
+        self._debug("_download", "calling GDAL CreateCopy...")
         ##try:
         temp_map_dataset = driver.CreateCopy(temp_map, wms_dataset, 0)
         ##except RuntimeError as err:
@@ -109,5 +117,7 @@ class WMSGDALDRV(WMSBASE):
 
         temp_map_dataset  = None
         wms_dataset = None
+
+        self._debug("_download", "finished")
 
         return temp_map

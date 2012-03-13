@@ -17,8 +17,13 @@ class WMSBASE:
         self.temp_map = self._download()
 	self._createOutputMap()    
 
+    def _debug(self, fn, msg):
+        grass.debug("%s.%s: %s" %
+                    (self.__class__.__name__, fn, msg))
+        
     def _initialize_parameters(self, options, flags):
-
+        self._debug("_initialize_parameters", "started")
+        
         self.flags = flags 
         if self.flags['t']:
             self.transparent = 'TRUE'
@@ -82,7 +87,9 @@ class WMSBASE:
         
         if not self.proj_srs or not self.proj_location:
             grass.fatal(_("Unable to get projection info"))
-
+            
+        self._debug("_initialize_parameters", "finished")
+        
     def __del__(self):
         # obnovit puvodni region pokud je to treba
         import sys
@@ -117,9 +124,9 @@ class WMSBASE:
     def _computeBbox(self):
         """!Get region extent for WMS query (bbox)
         """
+        self._debug("_computeBbox", "started")
         
-        if self.o_region:
-                                       #todo WIND_OVERRIDE 
+        if self.o_region: # todo WIND_OVERRIDE 
             if grass.run_command('g.region',
                               quiet = True,
                               region = self.o_region) != 0:
@@ -178,7 +185,8 @@ class WMSBASE:
                     bbox['e'] = point[0]
                 elif bbox['w'] > point[0]:
                     bbox['w'] = point[0]  
-     
+        
+        self._debug("_computeBbox", "finished -> %s" % bbox)
         return bbox
 
     def _createOutputMap(self): 
