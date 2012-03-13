@@ -15,20 +15,22 @@ class WMSDRV(WMSBASE):
 
         @return temp_map with stored downloaded data
         """    
-
+        cols = self.region['cols']
+        rows = self.region['rows']
+        
         # Compute parameters of tiles 
-        num_tiles_x = self.o_map_res_x / self.o_tile_res_x  
-        last_tile_x_size = self.o_map_res_x % self.o_tile_res_x 
-        tile_x_length =  float(self.o_tile_res_x) / float(self.o_map_res_x ) * (self.bbox['e'] - self.bbox['w']) 
+        num_tiles_x = cols / self.o_maxcols  
+        last_tile_x_size = cols % self.o_maxcols 
+        tile_x_length =  float(self.o_maxcols) / float(cols ) * (self.bbox['e'] - self.bbox['w']) 
 
         last_tile_x = False
         if last_tile_x_size != 0:
             last_tile_x = True
             num_tiles_x = num_tiles_x + 1
 
-        num_tiles_y = self.o_map_res_y / self.o_tile_res_y 
-        last_tile_y_size = self.o_map_res_y % self.o_tile_res_y
-        tile_y_length =  float(self.o_tile_res_y) / float(self.o_map_res_y) * (self.bbox['n'] - self.bbox['s']) 
+        num_tiles_y = rows / self.o_maxrows 
+        last_tile_y_size = rows % self.o_maxrows
+        tile_y_length =  float(self.o_maxrows) / float(rows) * (self.bbox['n'] - self.bbox['s']) 
 
         last_tile_y = False
         if last_tile_y_size != 0:
@@ -41,9 +43,9 @@ class WMSDRV(WMSBASE):
         ## Downloads each tile and writes it into temp_map 
         proj = self.projection_name + "=EPSG:"+ str(self.o_srs)
         url = self.o_wms_server_url + "REQUEST=GetMap&VERSION=%s&LAYERS=%s&WIDTH=%s&HEIGHT=%s&STYLES=%s&BGCOLOR=%s&TRASPARENT=%s" %\
-                  (self.o_wms_version, self.o_layers, self.o_tile_res_x, self.o_tile_res_y, self.o_styles, self.o_bgcolor, self.transparent)
+                  (self.o_wms_version, self.o_layers, self.o_maxcols, self.o_maxrows, self.o_styles, self.o_bgcolor, self.transparent)
         url = url + "&" +proj+ "&" + "FORMAT=" + self.mime_format
-        tile_to_temp_map_size_x = self.o_tile_res_x 
+        tile_to_temp_map_size_x = self.o_maxcols 
         i_x = 0   
         while i_x < num_tiles_x:
 
@@ -56,7 +58,7 @@ class WMSDRV(WMSBASE):
 
             tile_bbox['n'] = self.bbox['n']                    
             tile_bbox['s'] = self.bbox['n']  - tile_y_length 
-            tile_to_temp_map_size_y = self.o_tile_res_y       
+            tile_to_temp_map_size_y = self.o_maxrows       
 
             i_y = 0
             while i_y < num_tiles_y:        
@@ -115,13 +117,13 @@ class WMSDRV(WMSBASE):
                            metadata[gdal.DCAP_CREATE] == 'NO':
                         grass.fatal(_('Driver %s supports Create() method.') % drv_format)  
                     
-                    temp_map_dataset = driver.Create(temp_map, int(self.o_map_res_x), int(self.o_map_res_y), \
+                    temp_map_dataset = driver.Create(temp_map, int(cols), int(rows), \
                                                      bands_number_func(tile_dataset), cell_type_func(band) );
 
                 tile_to_temp_map = tile_dataset.ReadRaster(0, 0, tile_to_temp_map_size_x, tile_to_temp_map_size_y, \
                                                                  tile_to_temp_map_size_x, tile_to_temp_map_size_y)
  	
-                temp_map_dataset.WriteRaster(self.o_tile_res_x * i_x, self.o_tile_res_y * i_y, \
+                temp_map_dataset.WriteRaster(self.o_maxcols * i_x, self.o_maxrows * i_y, \
                                              tile_to_temp_map_size_x,  tile_to_temp_map_size_y, tile_to_temp_map) 
   
                 tile_dataset = None
@@ -137,8 +139,8 @@ class WMSDRV(WMSBASE):
                                         epsg =self.o_srs).rstrip('\n')
         temp_map_dataset.SetProjection(projection)
 
-        pixel_x_length = (self.bbox['e'] - self.bbox['w']) / int(self.o_map_res_x)
-        pixel_y_length = (self.bbox['s'] - self.bbox['n']) / int(self.o_map_res_y)
+        pixel_x_length = (self.bbox['e'] - self.bbox['w']) / int(cols)
+        pixel_y_length = (self.bbox['s'] - self.bbox['n']) / int(rows)
         geo_transform = [ self.bbox['w'] , pixel_x_length  , 0.0 ,  self.bbox['n'] , 0.0 , pixel_y_length ] 
         temp_map_dataset.SetGeoTransform(geo_transform )
         temp_map_dataset = None

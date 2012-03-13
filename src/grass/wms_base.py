@@ -24,15 +24,15 @@ class WMSBASE:
             self.transparent = 'TRUE'
         else:
             self.transparent = 'FALSE'   
-    
-        self.o_wms_server_url = options['wms_server_url'] + "?"
+        
+        self.region = None # set by computeBbox()
+        
+        self.o_wms_server_url = options['mapserver_url'] + "?"
         self.o_layers = options['layers']
         self.o_styles = options['styles']
         self.o_srs = int(options['srs'])
-        self.o_map_res_x = int(options['map_res_x']) 
-        self.o_map_res_y = int(options['map_res_y'])
-        self.o_tile_res_x = int(options['tile_res_x']) #TODO num tiles
-        self.o_tile_res_y = int(options['tile_res_y'])
+        self.o_maxcols = int(options['maxcols']) #TODO num tiles
+        self.o_maxrows = int(options['maxrows'])
         self.o_output = options['output'] 
         self.o_region = options['region']
         self.o_bgcolor = options['bgcolor'] # supported only in wms_drv
@@ -61,8 +61,9 @@ class WMSBASE:
 
         self.actual_region = 'wms_temp_region'
         if grass.run_command('g.region',
-                              quiet = True,
-                              save =  self.actual_region) != 0:
+                             overwrite = True,
+                             quiet = True,
+                             save = self.actual_region) != 0:
              grass.fatal(_('g.region failed'))   
 
         self.bbox = None # region extent for WMS query  
@@ -84,7 +85,8 @@ class WMSBASE:
 
     def __del__(self):
         # obnovit puvodni region pokud je to treba
-        pass
+        import sys
+        print >> sys.stderr, "deskruktor..."
         
     def _getCapabilities(self): # TODO get_cap
         """!Get capabilities from WMS server
@@ -123,13 +125,13 @@ class WMSBASE:
                               region = self.o_region) != 0:
                 grass.fatal(_('g.region failed'))           
         
- 	region = grass.region()
+ 	self.region = grass.region()
         
         bbox = {'n' : None, 's' : None, 'e' : None, 'w' : None}
         
         if self.proj_srs == self.proj_location: # TODO: do it better
             for param in bbox:
-                bbox[param] = region[param]
+                bbox[param] = self.region[param]
         ## zde se, pokud se lisi projekce wms a lokace, vypocita novy
         ## region, ktery vznikne transformaci regionu do zobrazeni wms
         ## a z techto ctyr transformovanych bodu se vyberou dva ktere

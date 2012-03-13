@@ -14,22 +14,18 @@
     """
 
 #%module
-#% description: WMS 
-#% keywords: WMS
-#% keywords: web map service
+#% description: Downloads and imports data from WMS servers.
+#% keywords: raster
+#% keywords: import
+#% keywords: wms
 #%end
 
 #%option
-#% key: wms_server_url
+#% key: mapserver_url
 #% type: string
 #% description:URL of WMS server 
 #% required: yes
 #% answer: http://wms.cuzk.cz/wms.asp
-#%end
-
-#%option G_OPT_R_OUTPUT
-#% description: output map
-#% guisection: Request properties
 #%end
 
 #%option
@@ -37,17 +33,27 @@
 #% type: string
 #% description: Layers to request from map server
 #% multiple: yes
+#% required: yes
 #% answer: prehledka_kraju-linie
-#% guisection: Request properties
+#%end
+
+#%option G_OPT_R_OUTPUT
+#% description: Name for output raster map
 #%end
 
 #%option
-#% key: wms_version
-#% type:string
-#% description:WMS standard
-#% options:1.1.1,1.3.0
-#% answer:1.1.1
-#% guisection: Request properties
+#% key: styles
+#% type: string
+#% description: Styles to request from map server
+#% multiple: yes
+#% guisection: Map style
+#%end
+
+#%option
+#% key: bgcolor
+#% type: string
+#% description: Color of map background (only with 'd' flag)
+#% guisection: Map style
 #%end
 
 #%option
@@ -66,6 +72,15 @@
 #%end
 
 #%option
+#% key: wms_version
+#% type:string
+#% description:WMS standard
+#% options:1.1.1,1.3.0
+#% answer:1.1.1
+#% guisection: Request properties
+#%end
+
+#%option
 #% key: format
 #% type: string
 #% description: Image format requested from the server
@@ -75,51 +90,19 @@
 #%end
 
 #%option
-#% key: map_res_x
+#% key: maxcols
 #% type:integer
-#% description: X resolution of map
-#% answer:800
-#% guisection: Request properties
-#%end
-
-#%option
-#% key: map_res_y
-#% type:integer
-#% description: Y resolution of map
-#% answer:600
-#% guisection: Request properties
-#%end
-
-#%option
-#% key: tile_res_x
-#% type:integer
-#% description: X resolution of tile 
+#% description: Maximum columns to request at a time
 #% answer:400
 #% guisection: Request properties
 #%end
 
 #%option
-#% key: tile_res_y
-#% type:integer
-#% description: Y resolution of tile
-#% answer:300
+#% key: maxrows
+#% type: integer
+#% description: Maximum rows to request at a time
+#% answer: 300
 #% guisection: Request properties
-#%end
-
-
-#%option
-#% key: styles
-#% type: string
-#% description: Styles to request from map server
-#% multiple: yes
-#% guisection: Map style
-#%end
-
-#%option
-#% key: bgcolor
-#% type: string
-#% description: Color of map background (only with g flag)
-#% guisection: Map style
 #%end
 
 #%flag
@@ -132,14 +115,13 @@
 #% key: c
 #% description: Get capabilities
 #% guisection: Request properties
+#% suppress_required: yes
 #%end
-
 
 #%flag
-#% key: g
-#% description: Do not use gdal driver
+#% key: d
+#% description: Do not use GDAL WMS driver
 #%end
-
 
 import sys
 import atexit
@@ -162,12 +144,12 @@ def cleanup():
                           rast = ','.join(maps))
     
 def main():
-    
-    if flags['g']:
+    if flags['d']:
         wms = WMSDRV()
     else:
         wms = WMSGDALDRV()
-    atexit.register(wms.cleanup)
+    
+    #atexit.register(wms.cleanup)
     wms.run(options, flags)
     return 0
 

@@ -58,16 +58,16 @@ class WMSGDALDRV(WMSBASE):
         lower_right_y.text = str(self.bbox['s'])
 
         size_x = etree.SubElement(data_window, "SizeX")
-        size_x.text = str(self.o_map_res_x) 
+        size_x.text = str(self.region['cols']) 
 
         size_y = etree.SubElement(data_window, "SizeY")
-        size_y.text = str(self.o_map_res_y) 
+        size_y.text = str(self.region['rows']) 
 
         block_size_x = etree.SubElement(gdal_wms, "BlockSizeX")
-        block_size_x.text = str(self.o_tile_res_x) 
+        block_size_x.text = str(self.o_maxcols) 
 
         block_size_y = etree.SubElement(gdal_wms, "BlockSizeY")
-        block_size_y.text = str(self.o_tile_res_y)
+        block_size_y.text = str(self.o_maxrows)
 
         xml_file = grass.tempfile()
         if xml_file is None:
