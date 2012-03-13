@@ -74,9 +74,6 @@ class WMSGDALDRV(WMSBASE):
         etree.ElementTree(gdal_wms).write(xml_file)
 
         self._debug("_createXML", "finished -> %s" % xml_file)
-
-        import time
-        time.sleep(10)
         
         return xml_file
     
@@ -108,7 +105,6 @@ class WMSGDALDRV(WMSBASE):
             grass.fatal(_('Driver %s supports CreateCopy() method.') % self.gdal_drv_name)
 
         self._debug("_download", "calling GDAL CreateCopy...")
-        return temp_map
     
         ##try:
         temp_map_dataset = driver.CreateCopy(temp_map, wms_dataset, 0)

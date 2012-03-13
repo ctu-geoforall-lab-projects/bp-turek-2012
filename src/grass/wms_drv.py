@@ -36,15 +36,16 @@ class WMSDRV(WMSBASE):
         if last_tile_y_size != 0:
             last_tile_y = True
             num_tiles_y = num_tiles_y + 1
-
-        tile_bbox = dict(self.bbox)
-        tile_bbox['e'] = self.bbox['w']  + tile_x_length
         
         ## Downloads each tile and writes it into temp_map 
         proj = self.projection_name + "=EPSG:"+ str(self.o_srs)
         url = self.o_wms_server_url + "REQUEST=GetMap&VERSION=%s&LAYERS=%s&WIDTH=%s&HEIGHT=%s&STYLES=%s&BGCOLOR=%s&TRASPARENT=%s" %\
                   (self.o_wms_version, self.o_layers, self.o_maxcols, self.o_maxrows, self.o_styles, self.o_bgcolor, self.transparent)
         url = url + "&" +proj+ "&" + "FORMAT=" + self.mime_format
+        
+        tile_bbox = dict(self.bbox)
+        tile_bbox['e'] = self.bbox['w']  + tile_x_length
+
         tile_to_temp_map_size_x = self.o_maxcols 
         for i_x in range(num_tiles_x):
             # set bbox for tile i_x,i_y (E, W)
@@ -92,10 +93,12 @@ class WMSDRV(WMSBASE):
                         grass.fatal(_("Server WMS unknown error") )
                 
                 band = tile_dataset.GetRasterBand(1) 
-                cell_type_func = band.__swig_getmethods__["DataType"]# nejde to vyresit elegantneji?  
+                cell_type_func = band.__swig_getmethods__["DataType"]# zkousel jsem bez  __swig_getmethods__ a neslo to
                 bands_number_func = tile_dataset.__swig_getmethods__["RasterCount"]
                 
                 ## Expansion of color table (if exists) into bands 
+
+                ######stejny problem resili v r.in.wms - soubor gdalwarp.py radek 117####
                 temp_tile_pct2rgb = None
                 if bands_number_func(tile_dataset) == 1 and band.GetRasterColorTable() is not None:
                     temp_tile_pct2rgb = grass.tempfile()
@@ -118,6 +121,7 @@ class WMSDRV(WMSBASE):
                     temp_map_dataset = driver.Create(temp_map, int(cols), int(rows),
                                                      bands_number_func(tile_dataset), cell_type_func(band));
 
+                ## write tile into temp map
                 tile_to_temp_map = tile_dataset.ReadRaster(0, 0, tile_to_temp_map_size_x, tile_to_temp_map_size_y,
                                                                  tile_to_temp_map_size_x, tile_to_temp_map_size_y)
  	

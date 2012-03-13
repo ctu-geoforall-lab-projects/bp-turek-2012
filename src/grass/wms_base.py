@@ -20,11 +20,12 @@ class WMSBASE:
 
     def __del__(self):
         # restore original region settings (if needed?)
-        if self.tmpreg:
-            os.environ['GRASS_REGION'] = self.tmpreg
-        else:
-            if 'GRASS_REGION' in os.environ:
-                del os.environ['GRASS_REGION']
+        #if self.tmpreg:
+        #    os.environ['GRASS_REGION'] = self.tmpreg
+       # else:
+        #    if 'GRASS_REGION' in os.environ:
+        #        del os.environ['GRASS_REGION']
+        pass
         
     def _debug(self, fn, msg):
         grass.debug("%s.%s: %s" %
@@ -80,7 +81,7 @@ class WMSBASE:
         self.gdal_drv_format = "GTiff"
         
         # store original region settings
-        self.tmpreg = os.getenv("GRASS_REGION")
+        #self.tmpreg = os.getenv("GRASS_REGION")
         
         # read projection info
         self.proj_srs = grass.read_command('g.proj', 
@@ -128,7 +129,7 @@ class WMSBASE:
         if self.o_region:
             s = grass.read_command('g.region',
                                    quiet = True,
-                                   flags = 'ug'
+                                   flags = 'ug',
                                    region = self.o_region)
             self.region = parse_key_val(s, val_type = float)
         else:
@@ -149,10 +150,10 @@ class WMSBASE:
                 grass.fatal(_("Unable to create temporary files"))
             tmp_file_region = open(tmp_file_region_path, 'w')
             tmp_file_region.write("%f %f\n%f %f\n%f %f\n%f %f\n"  %\
-                                   (region['e'], region['n'],\
-                                    region['w'], region['n'],\
-                                    region['w'], region['s'],\
-                                    region['e'], region['s'] ))
+                                   (self.region['e'], self.region['n'],\
+                                    self.region['w'], self.region['n'],\
+                                    self.region['w'], self.region['s'],\
+                                    self.region['e'], self.region['s'] ))
             tmp_file_region.close()
             
             points = grass.read_command('m.proj', flags = 'd',
@@ -212,8 +213,8 @@ class WMSBASE:
                              output = self.o_output) != 0:
             grass.fatal(_('r.in.gdal failed'))
 
-        grass.try_remove(self.temp_map)
-        grass.try_remove(temp_warpmap)
+       # grass.try_remove(self.temp_map)
+      #  grass.try_remove(temp_warpmap)
 
         # os.environ['GRASS_REGION'] = grass.region_env(rast = self.o_output + '.red')
         if grass.run_command('r.composite',
@@ -225,6 +226,6 @@ class WMSBASE:
         
         ##TODO r.null
         
-    def cleanup(self):
+   
 
 

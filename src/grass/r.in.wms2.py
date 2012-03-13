@@ -145,16 +145,14 @@ def cleanup():
     
 def main():
     if flags['d']:
-        wms = WMSDRV()
+        grass.debug("Using own driver")
+        wms = WMSDRV(options, flags)
     else:
         grass.debug("Using GDAL WMS driver")
-        wms = WMSGDALDRV()
-    
-    #atexit.register(wms.cleanup)
-    wms.run(options, flags)
+        wms = WMSGDALDRV(options, flags)
     return 0
 
 if __name__ == "__main__":
     options, flags = grass.parser()
-    #atexit.register(cleanup)
+    atexit.register(cleanup)
     sys.exit(main())
