@@ -15,8 +15,8 @@ class WMSDRV(WMSBASE):
 
         @return temp_map with stored downloaded data
         """    
-        cols = self.region['cols']
-        rows = self.region['rows']
+        cols = int(self.region['cols'])
+        rows = int(self.region['rows'])
         
         # Compute parameters of tiles 
         num_tiles_x = cols / self.o_maxcols  
@@ -82,8 +82,8 @@ class WMSDRV(WMSBASE):
                 temp_tile_opened.write(wms_data.read())
                 temp_tile_opened.close()       
                 
-                tile_dataset = gdal.Open(temp_tile, gdal.GA_ReadOnly) 
-                if tile_dataset is None:
+                tile_dataset_info = gdal.Open(temp_tile, gdal.GA_ReadOnly) 
+                if tile_dataset_info is None:
                     error_file_opened = open(temp_tile, 'r')##TODO osetrit vyjimky
                     err_str = error_file_opened.read()
                      
@@ -92,19 +92,21 @@ class WMSDRV(WMSBASE):
                     else:
                         grass.fatal(_("Server WMS unknown error") )
                 
-                band = tile_dataset.GetRasterBand(1) 
+                band = tile_dataset_info.GetRasterBand(1) 
                 cell_type_func = band.__swig_getmethods__["DataType"]# zkousel jsem bez  __swig_getmethods__ a neslo to
-                bands_number_func = tile_dataset.__swig_getmethods__["RasterCount"]
+                bands_number_func = tile_dataset_info.__swig_getmethods__["RasterCount"]
                 
                 ## Expansion of color table (if exists) into bands 
 
                 ######stejny problem resili v r.in.wms - soubor gdalwarp.py radek 117####
                 temp_tile_pct2rgb = None
-                if bands_number_func(tile_dataset) == 1 and band.GetRasterColorTable() is not None:
+                if bands_number_func(tile_dataset_info) == 1 and band.GetRasterColorTable() is not None:
                     temp_tile_pct2rgb = grass.tempfile()
                     if temp_tile_pct2rgb is None:
                         grass.fatal(_("Unable to create temporary files"))
                     tile_dataset = self._pct2rgb(temp_tile, temp_tile_pct2rgb)##TODO
+                else: 
+                    tile_dataset = tile_dataset_info
 
                 ## Initialization of temp_map_dataset, where all tiles are merged
                 if i_x == 0 and i_y == 0:
@@ -129,6 +131,7 @@ class WMSDRV(WMSBASE):
                                              tile_to_temp_map_size_x,  tile_to_temp_map_size_y, tile_to_temp_map) 
   
                 tile_dataset = None
+                tile_dataset_info = None
                 grass.try_remove(temp_tile)
                 grass.try_remove(temp_tile_pct2rgb)    
         

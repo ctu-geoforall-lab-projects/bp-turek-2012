@@ -22,11 +22,25 @@ class WMSBASE:
         # restore original region settings (if needed?)
         #if self.tmpreg:
         #    os.environ['GRASS_REGION'] = self.tmpreg
-       # else:
+        #else:
         #    if 'GRASS_REGION' in os.environ:
         #        del os.environ['GRASS_REGION']
-        pass
-        
+
+        if grass.find_file( self.o_output + '.alpha', element = 'cell', mapset = '.' )['name']:	
+            if grass.run_command('r.mask',
+                                  quiet = True,
+                                  flags = 'r') != 0:  
+                grass.fatal(_('r.mask failed'))
+
+            if grass.find_file( self.temp_mask_name, element = 'cell', mapset = '.' )['name']:
+                if grass.run_command('g.copy',
+                                     quiet = True,
+                                     rast = self.temp_mask_name + ',MASK' ) != 0:    
+                    grass.fatal(_('r.mask failed'))
+
+        grass.del_temp_region()
+
+    
     def _debug(self, fn, msg):
         grass.debug("%s.%s: %s" %
                     (self.__class__.__name__, fn, msg))
@@ -79,7 +93,7 @@ class WMSBASE:
         
         # default format for GDAL library
         self.gdal_drv_format = "GTiff"
-        
+        self.temp_mask_name = "MASK.r.in.gdal"#TODO unique number 
         # store original region settings
         #self.tmpreg = os.getenv("GRASS_REGION")
         
@@ -131,7 +145,7 @@ class WMSBASE:
                                    quiet = True,
                                    flags = 'ug',
                                    region = self.o_region)
-            self.region = parse_key_val(s, val_type = float)
+            self.region = grass.parse_key_val(s, val_type = float)
         else:
             self.region = grass.region()
         
@@ -200,8 +214,8 @@ class WMSBASE:
             ps = subprocess.Popen(['gdalwarp',
                                    '-s_srs', '%s' % self.proj_srs,
                                    '-t_srs', '%s' % self.proj_location,
-                                   '-r', 'near',
-                                   self.temp_map, temp_warpmap])
+                                   '-r', 'near', '-dstalpha',
+                                   self.temp_map, temp_warpmap])#TODO gdalwarp method
             ps.wait()
             if ps.returncode != 0:
                 grass.fatal(_('gdalwarp failed'))
@@ -213,18 +227,39 @@ class WMSBASE:
                              output = self.o_output) != 0:
             grass.fatal(_('r.in.gdal failed'))
 
-       # grass.try_remove(self.temp_map)
-      #  grass.try_remove(temp_warpmap)
+        grass.try_remove(self.temp_map)
+        grass.try_remove(temp_warpmap)
 
         # os.environ['GRASS_REGION'] = grass.region_env(rast = self.o_output + '.red')
+        grass.use_temp_region()	
+        grass.run_command('g.region',
+                           quiet = True,
+                           rast = self.o_output + '.red')
+        
+        # set null values into unset or transparent pixels using mask created from alpha layer
+        if grass.find_file( self.o_output + '.alpha', element = 'cell', mapset = '.' )['name']:# grey????
+        
+            if grass.find_file( 'MASK', element = 'cell', mapset = '.' )['name']:
+                if grass.run_command('g.copy',
+                                   quiet = True,
+                                   rast = 'MASK,' + self.temp_mask_name ) != 0:  #TODO unique number   
+                    grass.fatal(_('r.mask failed'))               
+
+            if grass.run_command('r.mask',
+                                  quiet = True,
+                                  maskcats= "0",
+                                  flags = 'i',
+                                  input = self.o_output + '.alpha') != 0:   
+                grass.fatal(_('r.mask failed'))
+
         if grass.run_command('r.composite',
-                             red =self.o_output + '.red',
+                             red = self.o_output + '.red',
                              green = self.o_output +  '.green',
                              blue = self.o_output + '.blue',
                              output = self.o_output ) != 0:
                 grass.fatal(_('r.composite failed'))
-        
-        ##TODO r.null
+
+
         
    
 
