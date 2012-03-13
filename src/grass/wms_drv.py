@@ -46,41 +46,41 @@ class WMSDRV(WMSBASE):
                   (self.o_wms_version, self.o_layers, self.o_maxcols, self.o_maxrows, self.o_styles, self.o_bgcolor, self.transparent)
         url = url + "&" +proj+ "&" + "FORMAT=" + self.mime_format
         tile_to_temp_map_size_x = self.o_maxcols 
-        i_x = 0   
-        while i_x < num_tiles_x:
-
+        for i_x in range(num_tiles_x):
+            # set bbox for tile i_x,i_y (E, W)
             if i_x != 0:
-                tile_bbox['e'] = tile_bbox['e'] + tile_x_length 
-                tile_bbox['w'] = tile_bbox['w'] + tile_x_length            
-
+                tile_bbox['e'] += tile_x_length 
+                tile_bbox['w'] += tile_x_length            
+            
             if i_x == num_tiles_x - 1 and last_tile_x:
                 tile_to_temp_map_size_x = last_tile_x_size 
-
+            
             tile_bbox['n'] = self.bbox['n']                    
-            tile_bbox['s'] = self.bbox['n']  - tile_y_length 
+            tile_bbox['s'] = self.bbox['n'] - tile_y_length 
             tile_to_temp_map_size_y = self.o_maxrows       
-
-            i_y = 0
-            while i_y < num_tiles_y:        
+            
+            for i_y in range(num_tiles_y):
+                # set bbox for tile i_x,i_y (N, S)
                 if i_y != 0:
-                    tile_bbox['s'] = tile_bbox['s'] - tile_y_length 
-                    tile_bbox['n'] = tile_bbox['n'] - tile_y_length
-
+                    tile_bbox['s'] -= tile_y_length 
+                    tile_bbox['n'] -= tile_y_length
+                
                 if i_y == num_tiles_y - 1 and last_tile_y:
                     tile_to_temp_map_size_y = last_tile_y_size 
-            
-                query_bbox = "BBOX=%s,%s,%s,%s" % (tile_bbox['w'], tile_bbox['s'], tile_bbox['e'], tile_bbox['n'])
-                query_url = url + "&" + query_bbox 
-                wms_data= urlopen(query_url)
-
+                
+                # bbox for tile defined
+                query_url = url + "&" + "BBOX=%s,%s,%s,%s" % (tile_bbox['w'], tile_bbox['s'], tile_bbox['e'], tile_bbox['n'])
+                wms_data = urlopen(query_url)
+                
                 temp_tile = grass.tempfile()
                 if temp_tile is None:
                     grass.fatal(_("Unable to create temporary files"))
-
+                
+                # download data into temporary file
                 temp_tile_opened = open(temp_tile, 'w')##TODO osetrit vyjimky
                 temp_tile_opened.write(wms_data.read())
                 temp_tile_opened.close()       
-             
+                
                 tile_dataset = gdal.Open(temp_tile, gdal.GA_ReadOnly) 
                 if tile_dataset is None:
                     error_file_opened = open(temp_tile, 'r')##TODO osetrit vyjimky
@@ -90,16 +90,14 @@ class WMSDRV(WMSBASE):
                         grass.fatal(_("Server WMS error: %s") %  err_str)
                     else:
                         grass.fatal(_("Server WMS unknown error") )
-
-
+                
                 band = tile_dataset.GetRasterBand(1) 
                 cell_type_func = band.__swig_getmethods__["DataType"]# nejde to vyresit elegantneji?  
                 bands_number_func = tile_dataset.__swig_getmethods__["RasterCount"]
                 
                 ## Expansion of color table (if exists) into bands 
                 temp_tile_pct2rgb = None
-                if bands_number_func(tile_dataset) == 1 and  band.GetRasterColorTable() is not None:
-
+                if bands_number_func(tile_dataset) == 1 and band.GetRasterColorTable() is not None:
                     temp_tile_pct2rgb = grass.tempfile()
                     if temp_tile_pct2rgb is None:
                         grass.fatal(_("Unable to create temporary files"))
@@ -113,26 +111,23 @@ class WMSDRV(WMSBASE):
                   
                     driver = gdal.GetDriverByName(self.gdal_drv_format)
                     metadata = driver.GetMetadata()
-                    if not metadata.has_key(gdal.DCAP_CREATE)   or\
+                    if not metadata.has_key(gdal.DCAP_CREATE) or \
                            metadata[gdal.DCAP_CREATE] == 'NO':
                         grass.fatal(_('Driver %s supports Create() method.') % drv_format)  
                     
-                    temp_map_dataset = driver.Create(temp_map, int(cols), int(rows), \
-                                                     bands_number_func(tile_dataset), cell_type_func(band) );
+                    temp_map_dataset = driver.Create(temp_map, int(cols), int(rows),
+                                                     bands_number_func(tile_dataset), cell_type_func(band));
 
-                tile_to_temp_map = tile_dataset.ReadRaster(0, 0, tile_to_temp_map_size_x, tile_to_temp_map_size_y, \
+                tile_to_temp_map = tile_dataset.ReadRaster(0, 0, tile_to_temp_map_size_x, tile_to_temp_map_size_y,
                                                                  tile_to_temp_map_size_x, tile_to_temp_map_size_y)
  	
-                temp_map_dataset.WriteRaster(self.o_maxcols * i_x, self.o_maxrows * i_y, \
+                temp_map_dataset.WriteRaster(self.o_maxcols * i_x, self.o_maxrows * i_y,
                                              tile_to_temp_map_size_x,  tile_to_temp_map_size_y, tile_to_temp_map) 
   
                 tile_dataset = None
                 grass.try_remove(temp_tile)
                 grass.try_remove(temp_tile_pct2rgb)    
-                   
-                i_y = i_y + 1
-            i_x = i_x + 1
-
+        
         # Georeferencing and setting projection of temp_map
         projection = grass.read_command('g.proj', 
                                         flags = 'wf',

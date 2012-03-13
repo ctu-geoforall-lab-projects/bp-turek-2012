@@ -9,14 +9,23 @@ import grass.script as grass
 #    gislib_error = e
 
 class WMSBASE:
-
-    def run(self, options, flags):
-
+    def __init__(self, options, flags):
         self._initialize_parameters(options, flags)
-        self.bbox = self._computeBbox()
+        
+        self.bbox     = self._computeBbox()
+
         self.temp_map = self._download()
+        
 	self._createOutputMap()    
 
+    def __del__(self):
+        # restore original region settings (if needed?)
+        if self.tmpreg:
+            os.environ['GRASS_REGION'] = self.tmpreg
+        else:
+            if 'GRASS_REGION' in os.environ:
+                del os.environ['GRASS_REGION']
+        
     def _debug(self, fn, msg):
         grass.debug("%s.%s: %s" %
                     (self.__class__.__name__, fn, msg))
@@ -24,14 +33,13 @@ class WMSBASE:
     def _initialize_parameters(self, options, flags):
         self._debug("_initialize_parameters", "started")
         
+        # get variables from options/flags
         self.flags = flags 
         if self.flags['t']:
             self.transparent = 'TRUE'
         else:
             self.transparent = 'FALSE'   
-        
-        self.region = None # set by computeBbox()
-        
+                
         self.o_wms_server_url = options['mapserver_url'] + "?"
         self.o_layers = options['layers']
         self.o_styles = options['styles']
@@ -49,7 +57,7 @@ class WMSBASE:
             self.projection_name = "CRS"
         else: 
             grass.error("Unsupported wms version")
-
+        
         self.o_format = options['format']
         if self.o_format == "geotiff":
             self.mime_format      = "image/geotiff"
@@ -63,21 +71,17 @@ class WMSBASE:
             self.mime_format      = "image/gif"
         else:
             grass.fatal(_("Unsupported image format %s") % self.o_format)
-
-        self.actual_region = 'wms_temp_region'
-        if grass.run_command('g.region',
-                             overwrite = True,
-                             quiet = True,
-                             save = self.actual_region) != 0:
-             grass.fatal(_('g.region failed'))   
-
-        self.bbox = None # region extent for WMS query  
-        self.gdal_drv_format = "GTiff"
-
+        
 	if self.o_region:                 
             if not grass.find_file(name = self.o_region, element = 'windows', mapset = '.' )['name']:
                 grass.fatal(_("Region <%s> not found") % self.o_region)
-
+        
+        # default format for GDAL library
+        self.gdal_drv_format = "GTiff"
+        
+        # store original region settings
+        self.tmpreg = os.getenv("GRASS_REGION")
+        
         # read projection info
         self.proj_srs = grass.read_command('g.proj', 
                                            flags = 'jf', 
@@ -89,11 +93,6 @@ class WMSBASE:
             grass.fatal(_("Unable to get projection info"))
             
         self._debug("_initialize_parameters", "finished")
-        
-    def __del__(self):
-        # obnovit puvodni region pokud je to treba
-        import sys
-        print >> sys.stderr, "deskruktor..."
         
     def _getCapabilities(self): # TODO get_cap
         """!Get capabilities from WMS server
@@ -126,13 +125,14 @@ class WMSBASE:
         """
         self._debug("_computeBbox", "started")
         
-        if self.o_region: # todo WIND_OVERRIDE 
-            if grass.run_command('g.region',
-                              quiet = True,
-                              region = self.o_region) != 0:
-                grass.fatal(_('g.region failed'))           
-        
- 	self.region = grass.region()
+        if self.o_region:
+            s = grass.read_command('g.region',
+                                   quiet = True,
+                                   flags = 'ug'
+                                   region = self.o_region)
+            self.region = parse_key_val(s, val_type = float)
+        else:
+            self.region = grass.region()
         
         bbox = {'n' : None, 's' : None, 'e' : None, 'w' : None}
         
@@ -215,27 +215,16 @@ class WMSBASE:
         grass.try_remove(self.temp_map)
         grass.try_remove(temp_warpmap)
 
-        if grass.run_command('g.region',
-                              quiet = True,
-                              rast =  self.o_output + '.red') != 0: #TODO grey...
-                 grass.fatal(_('g.region failed'))   
-        
+        # os.environ['GRASS_REGION'] = grass.region_env(rast = self.o_output + '.red')
         if grass.run_command('r.composite',
                              red =self.o_output + '.red',
                              green = self.o_output +  '.green',
                              blue = self.o_output + '.blue',
                              output = self.o_output ) != 0:
                 grass.fatal(_('r.composite failed'))
-
+        
         ##TODO r.null
         
     def cleanup(self):
-         region = grass.find_file(name = self.actual_region, element = 'windows', mapset = '.' )
-         if region is not None:
-            if  grass.run_command('g.region',
-                                   quiet = True,
-                                   region = self.actual_region) != 0:
-                     grass.fatal(_('g.region failed'))           
-            grass.try_remove(region['file'])
 
 
