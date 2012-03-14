@@ -133,7 +133,7 @@ from wms_gdal_drv import WMSGDALDRV
 
 def cleanup(): 
     maps = []
-    for suffix in ('.red', '.green', '.blue'):
+    for suffix in ('.red', '.green', '.blue', '.alpha'):
         rast = options['output'] + suffix
         if grass.find_file(rast, element = 'cell', mapset = '.')['file']:
             maps.append(rast)
@@ -141,6 +141,7 @@ def cleanup():
     if maps:
         grass.run_command('g.remove',
                           quiet = True,
+                          flags='f',
                           rast = ','.join(maps))
     
 def main():

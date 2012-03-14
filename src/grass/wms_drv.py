@@ -39,7 +39,7 @@ class WMSDRV(WMSBASE):
         
         ## Downloads each tile and writes it into temp_map 
         proj = self.projection_name + "=EPSG:"+ str(self.o_srs)
-        url = self.o_wms_server_url + "REQUEST=GetMap&VERSION=%s&LAYERS=%s&WIDTH=%s&HEIGHT=%s&STYLES=%s&BGCOLOR=%s&TRASPARENT=%s" %\
+        url = self.o_wms_server_url + "REQUEST=GetMap&VERSION=%s&LAYERS=%s&WIDTH=%s&HEIGHT=%s&STYLES=%s&BGCOLOR=%s&TRANSPARENT=%s" %\
                   (self.o_wms_version, self.o_layers, self.o_maxcols, self.o_maxrows, self.o_styles, self.o_bgcolor, self.transparent)
         url = url + "&" +proj+ "&" + "FORMAT=" + self.mime_format
         
@@ -72,7 +72,6 @@ class WMSDRV(WMSBASE):
                 # bbox for tile defined
                 query_url = url + "&" + "BBOX=%s,%s,%s,%s" % (tile_bbox['w'], tile_bbox['s'], tile_bbox['e'], tile_bbox['n'])
                 wms_data = urlopen(query_url)
-                
                 temp_tile = grass.tempfile()
                 if temp_tile is None:
                     grass.fatal(_("Unable to create temporary files"))

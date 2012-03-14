@@ -38,6 +38,10 @@ class WMSBASE:
                                      rast = self.temp_mask_name + ',MASK' ) != 0:    
                     grass.fatal(_('r.mask failed'))
 
+                if grass.run_command('g.remove',
+                                     quiet = True,
+                                     rast = self.temp_mask_name) != 0:    
+                    grass.fatal(_('r.remove failed'))
         grass.del_temp_region()
 
     
@@ -93,7 +97,7 @@ class WMSBASE:
         
         # default format for GDAL library
         self.gdal_drv_format = "GTiff"
-        self.temp_mask_name = "MASK.r.in.gdal"#TODO unique number 
+        self.temp_mask_name = "MASK.r.in.wms"#TODO unique number 
         # store original region settings
         #self.tmpreg = os.getenv("GRASS_REGION")
         
@@ -222,6 +226,9 @@ class WMSBASE:
         else:
             temp_warpmap = self.temp_map
 
+        if grass.find_file( self.o_output + '.alpha', element = 'cell', mapset = '.' )['name']:
+            grass.fatal(" self.o_output + '.alpha' already exists")
+
         if grass.run_command('r.in.gdal',
                              input = temp_warpmap,
                              output = self.o_output) != 0:
@@ -238,7 +245,7 @@ class WMSBASE:
         
         # set null values into unset or transparent pixels using mask created from alpha layer
         if grass.find_file( self.o_output + '.alpha', element = 'cell', mapset = '.' )['name']:# grey????
-        
+      
             if grass.find_file( 'MASK', element = 'cell', mapset = '.' )['name']:
                 if grass.run_command('g.copy',
                                    quiet = True,
