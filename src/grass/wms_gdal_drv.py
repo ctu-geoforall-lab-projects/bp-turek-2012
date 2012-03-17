@@ -1,13 +1,16 @@
-from osgeo import gdal
-import sys
-from osgeo import gdalconst
-from wms_base import WMSBASE
+try:
+    from osgeo import gdal
+    from osgeo import gdalconst #TODO test verze
+except:
+    grass.fatal("Unable to load GDAL python bindings")
+
 import grass.script as grass
+
+from wms_base import WMSbase
 import xml.etree.ElementTree as etree
 
-##gdal.UseExceptions() 
 
-class WMSGDALDRV(WMSBASE):
+class WMSgdaldrv(WMSbase):
 
     def _createXML(self):
         """!Create XML for GDAL WMS driver
@@ -20,10 +23,12 @@ class WMSGDALDRV(WMSBASE):
         service = etree.SubElement(gdal_wms, "Service")
         name = etree.Element("name")
         service.set("name","WMS")
+
         version = etree.SubElement(service, "Version")
         version.text =self.o_wms_version
+
         server_url = etree.SubElement(service, "ServerUrl")
-        server_url.text =self.o_wms_server_url
+        server_url.text =self.o_mapserver_url
       
         srs = etree.SubElement(service, self.projection_name)   
         srs.text = 'EPSG:' + str(self.o_srs)
@@ -42,8 +47,6 @@ class WMSGDALDRV(WMSBASE):
 
         data_window = etree.SubElement(gdal_wms, "DataWindow")
     
-        self.xml_file = grass.tempfile()
-
         upper_left_x = etree.SubElement(data_window, "UpperLeftX")
         upper_left_x.text = str(self.bbox['w']) 
 
@@ -62,15 +65,19 @@ class WMSGDALDRV(WMSBASE):
         size_y = etree.SubElement(data_window, "SizeY")
         size_y.text = str(self.region['rows']) 
 
+        #RGB + alpha
+        self.temp_map_bands_num = 4
+        block_size_x = etree.SubElement(gdal_wms, "BandsCount")
+        block_size_x.text = str(self.temp_map_bands_num)
+
         block_size_x = etree.SubElement(gdal_wms, "BlockSizeX")
-        block_size_x.text = str(self.o_maxcols) 
+        block_size_x.text = str(self.tile_cols) 
 
         block_size_y = etree.SubElement(gdal_wms, "BlockSizeY")
-        block_size_y.text = str(self.o_maxrows)
+        block_size_y.text = str(self.tile_rows)
 
-        xml_file = grass.tempfile()
-        if xml_file is None:
-            grass.fatal(_("Unable to create temporary files"))
+        xml_file = self._tempfile()
+
         etree.ElementTree(gdal_wms).write(xml_file)
 
         self._debug("_createXML", "finished -> %s" % xml_file)
@@ -82,10 +89,10 @@ class WMSGDALDRV(WMSBASE):
 
         @return temp_map with stored downloaded data
         """
+        grass.message("Downloading data from wms server...")
         self._debug("_download", "started")
-        temp_map = grass.tempfile()
-        if temp_map is None:
-            grass.fatal(_("Unable to create temporary files"))
+
+        temp_map = self._tempfile()
 
         xml_file = self._createXML()
         wms_dataset = gdal.Open(xml_file, gdal.GA_ReadOnly)
@@ -106,10 +113,8 @@ class WMSGDALDRV(WMSBASE):
 
         self._debug("_download", "calling GDAL CreateCopy...")
     
-        ##try:
-        temp_map_dataset = driver.CreateCopy(temp_map, wms_dataset, 0)
-        ##except RuntimeError as err:
-          ## grass.fatal(err)
+        temp_map_dataset = driver.CreateCopy(temp_map, wms_dataset, 0)#vyjimky
+
         if temp_map_dataset is None:
             grass.fatal(_("Incorrect WMS query"))
 

@@ -1,36 +1,50 @@
-#TODO test importu gdal
-from osgeo import gdal
-from osgeo import gdalconst
-from wms_base import WMSBASE
+try:
+    from osgeo import gdal
+    from osgeo import gdalconst 
+except:
+    grass.fatal("Unable to load GDAL python bindings")
+
 import grass.script as grass
+
+from wms_base import WMSbase
 from urllib2 import urlopen
+
 import numpy as Numeric
 Numeric.arrayrange = Numeric.arange
 
 
-class WMSDRV(WMSBASE):
+class WMSdrv(WMSbase):
 
     def _download(self):
         """!Downloads data from WMS server using own driver
 
         @return temp_map with stored downloaded data
-        """    
+        """ 
+        grass.message("Downloading data from wms server...")
+        proj = self.projection_name + "=EPSG:"+ str(self.o_srs)
+        url = self.o_mapserver_url + "REQUEST=GetMap&VERSION=%s&LAYERS=%s&WIDTH=%s&HEIGHT=%s&STYLES=%s&BGCOLOR=%s&TRANSPARENT=%s" %\
+                  (self.o_wms_version, self.o_layers, self.tile_cols, self.tile_rows, self.o_styles, self.o_bgcolor, self.transparent)
+        url += "&" +proj+ "&" + "FORMAT=" + self.mime_format
+
+        if self.o_urlparams !="":
+            url +="&" + self.o_urlparams
+
         cols = int(self.region['cols'])
         rows = int(self.region['rows'])
         
-        # Compute parameters of tiles 
-        num_tiles_x = cols / self.o_maxcols  
-        last_tile_x_size = cols % self.o_maxcols 
-        tile_x_length =  float(self.o_maxcols) / float(cols ) * (self.bbox['e'] - self.bbox['w']) 
-
+        # Computes parameters of tiles 
+        num_tiles_x = cols / self.tile_cols 
+        last_tile_x_size = cols % self.tile_cols
+        tile_x_length =  float(self.tile_cols) / float(cols ) * (self.bbox['e'] - self.bbox['w']) 
+         
         last_tile_x = False
         if last_tile_x_size != 0:
             last_tile_x = True
             num_tiles_x = num_tiles_x + 1
 
-        num_tiles_y = rows / self.o_maxrows 
-        last_tile_y_size = rows % self.o_maxrows
-        tile_y_length =  float(self.o_maxrows) / float(rows) * (self.bbox['n'] - self.bbox['s']) 
+        num_tiles_y = rows / self.tile_rows 
+        last_tile_y_size = rows % self.tile_rows
+        tile_y_length =  float(self.tile_rows) / float(rows) * (self.bbox['n'] - self.bbox['s']) 
 
         last_tile_y = False
         if last_tile_y_size != 0:
@@ -38,16 +52,13 @@ class WMSDRV(WMSBASE):
             num_tiles_y = num_tiles_y + 1
         
         ## Downloads each tile and writes it into temp_map 
-        proj = self.projection_name + "=EPSG:"+ str(self.o_srs)
-        url = self.o_wms_server_url + "REQUEST=GetMap&VERSION=%s&LAYERS=%s&WIDTH=%s&HEIGHT=%s&STYLES=%s&BGCOLOR=%s&TRANSPARENT=%s" %\
-                  (self.o_wms_version, self.o_layers, self.o_maxcols, self.o_maxrows, self.o_styles, self.o_bgcolor, self.transparent)
-        url = url + "&" +proj+ "&" + "FORMAT=" + self.mime_format
         
         tile_bbox = dict(self.bbox)
         tile_bbox['e'] = self.bbox['w']  + tile_x_length
 
-        tile_to_temp_map_size_x = self.o_maxcols 
+        tile_to_temp_map_size_x = self.tile_cols
         for i_x in range(num_tiles_x):
+
             # set bbox for tile i_x,i_y (E, W)
             if i_x != 0:
                 tile_bbox['e'] += tile_x_length 
@@ -58,9 +69,10 @@ class WMSDRV(WMSBASE):
             
             tile_bbox['n'] = self.bbox['n']                    
             tile_bbox['s'] = self.bbox['n'] - tile_y_length 
-            tile_to_temp_map_size_y = self.o_maxrows       
+            tile_to_temp_map_size_y = self.tile_rows       
             
             for i_y in range(num_tiles_y):
+
                 # set bbox for tile i_x,i_y (N, S)
                 if i_y != 0:
                     tile_bbox['s'] -= tile_y_length 
@@ -71,25 +83,38 @@ class WMSDRV(WMSBASE):
                 
                 # bbox for tile defined
                 query_url = url + "&" + "BBOX=%s,%s,%s,%s" % (tile_bbox['w'], tile_bbox['s'], tile_bbox['e'], tile_bbox['n'])
-                wms_data = urlopen(query_url)
-                temp_tile = grass.tempfile()
-                if temp_tile is None:
-                    grass.fatal(_("Unable to create temporary files"))
+
+                try: 
+                    wms_data = urlopen(query_url)
+                except IOError:
+                    grass.fatal("Unable to fetch data from mapserver")
+               
+                temp_tile = self._tempfile()
                 
                 # download data into temporary file
-                temp_tile_opened = open(temp_tile, 'w')##TODO osetrit vyjimky
-                temp_tile_opened.write(wms_data.read())
-                temp_tile_opened.close()       
+                try:
+                    temp_tile_opened = open(temp_tile, 'w')
+                    temp_tile_opened.write(wms_data.read())
+                except IOError:
+                    grass.fatal("Unable to write data into tempfile")
+                finally:
+                    temp_tile_opened.close()       
                 
                 tile_dataset_info = gdal.Open(temp_tile, gdal.GA_ReadOnly) 
                 if tile_dataset_info is None:
-                    error_file_opened = open(temp_tile, 'r')##TODO osetrit vyjimky
-                    err_str = error_file_opened.read()
-                     
+                    ##print error xml return from server
+                    try:
+                        error_xml_opened = open(temp_tile, 'r')
+                        err_str = error_xml_opened.read()     
+                    except IOError:
+                        grass.fatal("Unable to read data from tempfile")
+                    finally:
+                        error_xml_opened.close()
+
                     if  err_str is not None:
-                        grass.fatal(_("Server WMS error: %s") %  err_str)
+                        grass.fatal(_("WMS server error: %s") %  err_str)
                     else:
-                        grass.fatal(_("Server WMS unknown error") )
+                        grass.fatal(_("WMS server unknown error") )
                 
                 band = tile_dataset_info.GetRasterBand(1) 
                 cell_type_func = band.__swig_getmethods__["DataType"]# zkousel jsem bez  __swig_getmethods__ a neslo to
@@ -100,33 +125,33 @@ class WMSDRV(WMSBASE):
                 ######stejny problem resili v r.in.wms - soubor gdalwarp.py radek 117####
                 temp_tile_pct2rgb = None
                 if bands_number_func(tile_dataset_info) == 1 and band.GetRasterColorTable() is not None:
-                    temp_tile_pct2rgb = grass.tempfile()
-                    if temp_tile_pct2rgb is None:
-                        grass.fatal(_("Unable to create temporary files"))
-                    tile_dataset = self._pct2rgb(temp_tile, temp_tile_pct2rgb)##TODO
+
+                    temp_tile_pct2rgb = self._tempfile()
+                    tile_dataset = self._pct2rgb(temp_tile, temp_tile_pct2rgb)
+
                 else: 
+
                     tile_dataset = tile_dataset_info
 
                 ## Initialization of temp_map_dataset, where all tiles are merged
                 if i_x == 0 and i_y == 0:
-                    temp_map = grass.tempfile()
-                    if temp_map is None:
-                        grass.fatal(_("Unable to create temporary files"))  
+                    temp_map = self._tempfile()
                   
                     driver = gdal.GetDriverByName(self.gdal_drv_format)
                     metadata = driver.GetMetadata()
                     if not metadata.has_key(gdal.DCAP_CREATE) or \
                            metadata[gdal.DCAP_CREATE] == 'NO':
-                        grass.fatal(_('Driver %s supports Create() method.') % drv_format)  
-                    
-                    temp_map_dataset = driver.Create(temp_map, int(cols), int(rows),
-                                                     bands_number_func(tile_dataset), cell_type_func(band));
+                        grass.fatal(_('Driver %s does not supports Create() method.') % drv_format)  
 
-                ## write tile into temp map
+                    self.temp_map_bands_num = bands_number_func(tile_dataset)
+                    temp_map_dataset = driver.Create(temp_map, int(cols), int(rows),
+                                                     self.temp_map_bands_num, cell_type_func(band));
+
+                ## write tile into temp_map
                 tile_to_temp_map = tile_dataset.ReadRaster(0, 0, tile_to_temp_map_size_x, tile_to_temp_map_size_y,
                                                                  tile_to_temp_map_size_x, tile_to_temp_map_size_y)
  	
-                temp_map_dataset.WriteRaster(self.o_maxcols * i_x, self.o_maxrows * i_y,
+                temp_map_dataset.WriteRaster(self.tile_cols * i_x, self.tile_rows * i_y,
                                              tile_to_temp_map_size_x,  tile_to_temp_map_size_y, tile_to_temp_map) 
   
                 tile_dataset = None
@@ -151,13 +176,12 @@ class WMSDRV(WMSBASE):
 
     def _pct2rgb(self, src_filename, dst_filename):
         """!Create new dataset with data in dst_filename with bands according to src_filename 
-            raster color table 
+            raster color table - modificated code from gdal utility pct2rgb
 
         @return new dataset
         """  
 
-        format = 'GTiff'
-        out_bands = 3
+        out_bands = 4
         band_number = 1
         
         # Open source file
@@ -181,7 +205,7 @@ class WMSDRV(WMSBASE):
                     lookup[c][i] = entry[c]
 
         # Create the working file.
-        gtiff_driver = gdal.GetDriverByName(format)
+        gtiff_driver = gdal.GetDriverByName(self.gdal_drv_format)
         tif_ds = gtiff_driver.Create( dst_filename,
                                       src_ds.RasterXSize, src_ds.RasterYSize, out_bands )
 

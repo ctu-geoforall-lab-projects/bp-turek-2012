@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """
-    MODULE:    r.wms
+    MODULE:    r.in.wms2
     
     AUTHOR(S): Stepan Turek <stepan.turek AT seznam.cz>
     
-    PURPOSE:   Describe your script here...
+    PURPOSE:   Downloads and imports data from WMS servers.
     
     COPYRIGHT: (C) 2012 Stepan Turek, and by the GRASS Development Team
     
@@ -42,25 +42,10 @@
 #%end
 
 #%option
-#% key: styles
-#% type: string
-#% description: Styles to request from map server
-#% multiple: yes
-#% guisection: Map style
-#%end
-
-#%option
-#% key: bgcolor
-#% type: string
-#% description: Color of map background (only with 'd' flag)
-#% guisection: Map style
-#%end
-
-#%option
 #% key: srs
 #% type: integer
 #% description: EPSG number of source projection for request 
-#% answer:32633
+#% answer:4326
 #% guisection: Request properties
 #%end
 
@@ -90,6 +75,15 @@
 #%end
 
 #%option
+#% key: method
+#% type: string
+#% description: Reprojection method to use
+#% options:near,bilinear,cubic,cubicspline
+#% answer:near
+#% guisection: Request properties
+#%end
+
+#%option
 #% key: maxcols
 #% type:integer
 #% description: Maximum columns to request at a time
@@ -103,6 +97,28 @@
 #% description: Maximum rows to request at a time
 #% answer: 300
 #% guisection: Request properties
+#%end
+
+#%option
+#% key: urlparams
+#% type:string
+#% description: Addition query parameters for server (only with 'd' flag)
+#% guisection: Request properties
+#%end
+
+#%option
+#% key: styles
+#% type: string
+#% description: Styles to request from map server
+#% multiple: yes
+#% guisection: Map style
+#%end
+
+#%option
+#% key: bgcolor
+#% type: string
+#% description: Color of map background (only with 'd' flag)
+#% guisection: Map style
 #%end
 
 #%flag
@@ -128,32 +144,18 @@ import atexit
 
 import grass.script as grass
 
-from wms_drv import WMSDRV
-from wms_gdal_drv import WMSGDALDRV
-
-def cleanup(): 
-    maps = []
-    for suffix in ('.red', '.green', '.blue', '.alpha'):
-        rast = options['output'] + suffix
-        if grass.find_file(rast, element = 'cell', mapset = '.')['file']:
-            maps.append(rast)
-    
-    if maps:
-        grass.run_command('g.remove',
-                          quiet = True,
-                          flags='f',
-                          rast = ','.join(maps))
+from wms_drv import WMSdrv
+from wms_gdal_drv import WMSgdaldrv
     
 def main():
     if flags['d']:
         grass.debug("Using own driver")
-        wms = WMSDRV(options, flags)
+        wms = WMSdrv(options, flags)
     else:
         grass.debug("Using GDAL WMS driver")
-        wms = WMSGDALDRV(options, flags)
+        wms = WMSgdaldrv(options, flags)
     return 0
 
 if __name__ == "__main__":
     options, flags = grass.parser()
-    atexit.register(cleanup)
     sys.exit(main())
