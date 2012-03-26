@@ -1,6 +1,6 @@
 try:
     from osgeo import gdal
-    from osgeo import gdalconst #TODO test verze
+    from osgeo import gdalconst
 except:
     grass.fatal("Unable to load GDAL python bindings")
 
@@ -113,7 +113,7 @@ class WMSgdaldrv(WMSbase):
 
         self._debug("_download", "calling GDAL CreateCopy...")
     
-        temp_map_dataset = driver.CreateCopy(temp_map, wms_dataset, 0)#vyjimky
+        temp_map_dataset = driver.CreateCopy(temp_map, wms_dataset, 0)
 
         if temp_map_dataset is None:
             grass.fatal(_("Incorrect WMS query"))

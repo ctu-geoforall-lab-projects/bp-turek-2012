@@ -4,7 +4,7 @@
     
     AUTHOR(S): Stepan Turek <stepan.turek AT seznam.cz>
     
-    PURPOSE:   Downloads and imports data from WMS servers.
+    PURPOSE:   Downloads and imports data from WMS server.
     
     COPYRIGHT: (C) 2012 Stepan Turek, and by the GRASS Development Team
     

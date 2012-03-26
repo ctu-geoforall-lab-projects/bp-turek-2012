@@ -21,6 +21,7 @@ class WMSdrv(WMSbase):
         @return temp_map with stored downloaded data
         """ 
         grass.message("Downloading data from wms server...")
+
         proj = self.projection_name + "=EPSG:"+ str(self.o_srs)
         url = self.o_mapserver_url + "REQUEST=GetMap&VERSION=%s&LAYERS=%s&WIDTH=%s&HEIGHT=%s&STYLES=%s&BGCOLOR=%s&TRANSPARENT=%s" %\
                   (self.o_wms_version, self.o_layers, self.tile_cols, self.tile_rows, self.o_styles, self.o_bgcolor, self.transparent)
@@ -32,7 +33,7 @@ class WMSdrv(WMSbase):
         cols = int(self.region['cols'])
         rows = int(self.region['rows'])
         
-        # Computes parameters of tiles 
+        ## computes parameters of tiles 
         num_tiles_x = cols / self.tile_cols 
         last_tile_x_size = cols % self.tile_cols
         tile_x_length =  float(self.tile_cols) / float(cols ) * (self.bbox['e'] - self.bbox['w']) 
@@ -51,7 +52,7 @@ class WMSdrv(WMSbase):
             last_tile_y = True
             num_tiles_y = num_tiles_y + 1
         
-        ## Downloads each tile and writes it into temp_map 
+        ## each tile is downloaded and written into temp_map 
         
         tile_bbox = dict(self.bbox)
         tile_bbox['e'] = self.bbox['w']  + tile_x_length
@@ -59,7 +60,7 @@ class WMSdrv(WMSbase):
         tile_to_temp_map_size_x = self.tile_cols
         for i_x in range(num_tiles_x):
 
-            # set bbox for tile i_x,i_y (E, W)
+            ## set bbox for tile i_x,i_y (E, W)
             if i_x != 0:
                 tile_bbox['e'] += tile_x_length 
                 tile_bbox['w'] += tile_x_length            
@@ -73,7 +74,7 @@ class WMSdrv(WMSbase):
             
             for i_y in range(num_tiles_y):
 
-                # set bbox for tile i_x,i_y (N, S)
+                ## set bbox for tile i_x,i_y (N, S)
                 if i_y != 0:
                     tile_bbox['s'] -= tile_y_length 
                     tile_bbox['n'] -= tile_y_length
@@ -81,7 +82,7 @@ class WMSdrv(WMSbase):
                 if i_y == num_tiles_y - 1 and last_tile_y:
                     tile_to_temp_map_size_y = last_tile_y_size 
                 
-                # bbox for tile defined
+                ## bbox for tile defined
                 query_url = url + "&" + "BBOX=%s,%s,%s,%s" % (tile_bbox['w'], tile_bbox['s'], tile_bbox['e'], tile_bbox['n'])
 
                 try: 
@@ -91,7 +92,7 @@ class WMSdrv(WMSbase):
                
                 temp_tile = self._tempfile()
                 
-                # download data into temporary file
+                ## download data into temporary file
                 try:
                     temp_tile_opened = open(temp_tile, 'w')
                     temp_tile_opened.write(wms_data.read())
@@ -102,7 +103,7 @@ class WMSdrv(WMSbase):
                 
                 tile_dataset_info = gdal.Open(temp_tile, gdal.GA_ReadOnly) 
                 if tile_dataset_info is None:
-                    ##print error xml return from server
+                    ##print error xml returned from server
                     try:
                         error_xml_opened = open(temp_tile, 'r')
                         err_str = error_xml_opened.read()     
@@ -117,15 +118,15 @@ class WMSdrv(WMSbase):
                         grass.fatal(_("WMS server unknown error") )
                 
                 band = tile_dataset_info.GetRasterBand(1) 
-                cell_type_func = band.__swig_getmethods__["DataType"]# zkousel jsem bez  __swig_getmethods__ a neslo to
+                cell_type_func = band.__swig_getmethods__["DataType"]#??
                 bands_number_func = tile_dataset_info.__swig_getmethods__["RasterCount"]
                 
-                ## Expansion of color table (if exists) into bands 
+
 
                 ######stejny problem resili v r.in.wms - soubor gdalwarp.py radek 117####
                 temp_tile_pct2rgb = None
                 if bands_number_func(tile_dataset_info) == 1 and band.GetRasterColorTable() is not None:
-
+                    ## expansion of color table into bands 
                     temp_tile_pct2rgb = self._tempfile()
                     tile_dataset = self._pct2rgb(temp_tile, temp_tile_pct2rgb)
 
@@ -133,7 +134,7 @@ class WMSdrv(WMSbase):
 
                     tile_dataset = tile_dataset_info
 
-                ## Initialization of temp_map_dataset, where all tiles are merged
+                ## initialization of temp_map_dataset, where all tiles are merged
                 if i_x == 0 and i_y == 0:
                     temp_map = self._tempfile()
                   
@@ -147,7 +148,7 @@ class WMSdrv(WMSbase):
                     temp_map_dataset = driver.Create(temp_map, int(cols), int(rows),
                                                      self.temp_map_bands_num, cell_type_func(band));
 
-                ## write tile into temp_map
+                ## tile written into temp_map
                 tile_to_temp_map = tile_dataset.ReadRaster(0, 0, tile_to_temp_map_size_x, tile_to_temp_map_size_y,
                                                                  tile_to_temp_map_size_x, tile_to_temp_map_size_y)
  	
@@ -159,7 +160,7 @@ class WMSdrv(WMSbase):
                 grass.try_remove(temp_tile)
                 grass.try_remove(temp_tile_pct2rgb)    
         
-        # Georeferencing and setting projection of temp_map
+        ## georeferencing and setting projection of temp_map
         projection = grass.read_command('g.proj', 
                                         flags = 'wf',
                                         epsg =self.o_srs).rstrip('\n')
@@ -176,22 +177,21 @@ class WMSdrv(WMSbase):
 
     def _pct2rgb(self, src_filename, dst_filename):
         """!Create new dataset with data in dst_filename with bands according to src_filename 
-            raster color table - modificated code from gdal utility pct2rgb
+            raster color table - modified code from gdal utility pct2rgb
 
         @return new dataset
         """  
-
         out_bands = 4
         band_number = 1
         
-        # Open source file
+        ## Open source file
         src_ds = gdal.Open( src_filename )
         if src_ds is None:
             grass.fatal(_('Unable to open %s ' % src_filename))
 
         src_band = src_ds.GetRasterBand(band_number)
 
-        # Build color table.
+        ## Build color table.
         lookup = [ Numeric.arrayrange(256), 
                    Numeric.arrayrange(256), 
                    Numeric.arrayrange(256), 
@@ -204,12 +204,12 @@ class WMSdrv(WMSbase):
                 for c in range(4):
                     lookup[c][i] = entry[c]
 
-        # Create the working file.
+        ## Create the working file.
         gtiff_driver = gdal.GetDriverByName(self.gdal_drv_format)
         tif_ds = gtiff_driver.Create( dst_filename,
                                       src_ds.RasterXSize, src_ds.RasterYSize, out_bands )
 
-        # Do the processing one scanline at a time. 
+        ## Do the processing one scanline at a time. 
         for iY in range(src_ds.RasterYSize):
             src_data = src_band.ReadAsArray(0,iY,src_ds.RasterXSize,1)
 

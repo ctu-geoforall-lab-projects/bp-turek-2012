@@ -14,7 +14,7 @@ class WMSbase:
         ## these variables are information for destructor
         self.temp_files_to_cleanup = []
         self.cleanup_mask = False
-        self.cleanup_layers = False 
+        self.cleanup_layers = False
 
         if flags['c']:
             self._getCapabilities(options)
@@ -32,14 +32,15 @@ class WMSbase:
     def __del__(self):
     
         ## removes temporary mask, used for import transparent or warped temp_map  
-        if self.cleanup_mask:        
+        if self.cleanup_mask:  
+            # clear temporary mask, which was set by module      
             if grass.run_command('r.mask',
                                   quiet = True,
                                   flags = 'r') != 0:  
                 grass.fatal(_('r.mask failed'))
-             
+
             ## restore original mask, if exists 
-            if grass.find_file( self.original_mask_suffix, element = 'cell', mapset = '.' )['name']:
+            if grass.find_file( self.o_output + self.original_mask_suffix, element = 'cell', mapset = '.' )['name']:
                 if grass.run_command('g.copy',
                                      quiet = True,
                                      rast =  self.o_output + self.original_mask_suffix + ',MASK' ) != 0:    
@@ -50,7 +51,7 @@ class WMSbase:
         for temp_file in self.temp_files_to_cleanup:
             grass.try_remove(temp_file)
 
-        # removes temporary created rasters
+        ## remove temporary created rasters
         if self.cleanup_layers: 
             maps = []
             for suffix in ('.red', '.green', '.blue', '.alpha', self.original_mask_suffix):
@@ -75,7 +76,7 @@ class WMSbase:
     def _initializeParameters(self, options, flags):
         self._debug("_initialize_parameters", "started")
         
-        ##inicialization of module parameters (options, flags)
+        ## inicialization of module parameters (options, flags)
         self.flags = flags 
         if self.flags['t']:
             self.transparent = 'TRUE'
@@ -122,7 +123,7 @@ class WMSbase:
         if self.o_srs <= 0:
             grass.fatal("EPSG code must be more then zero")
 
-        # read projection info
+        ## read projection info
         self.proj_location = grass.read_command('g.proj', 
                                                 flags ='jf').rstrip('\n')
 
@@ -133,7 +134,7 @@ class WMSbase:
         if not self.proj_srs or not self.proj_location:
             grass.fatal(_("Unable to get projection info"))
 
-        # set region 
+        ## set region 
         self.o_region = options['region']
 	if self.o_region:                 
             if not grass.find_file(name = self.o_region, element = 'windows', mapset = '.' )['name']:
@@ -151,21 +152,21 @@ class WMSbase:
         min_tile_size = 100
         self.o_maxcols = int(options['maxcols'])
         if self.o_maxcols <= min_tile_size:
-            grass.fatal("Maxcols must be higher then 100.")
+            grass.fatal("Maxcols must be more than 100.")
 
         self.o_maxrows = int(options['maxrows'])
         if self.o_maxrows <= min_tile_size:
-            grass.fatal("Maxrows must be higher then 100.")
+            grass.fatal("Maxrows must be more than 100.")
 
-        # setting optimal tile size according to maxcols and maxrows constraint and region cols and rows      
+        ## setting optimal tile size according to maxcols and maxrows constraint and region cols and rows      
         self.tile_cols = int(self.region['cols'] / ceil(self.region['cols'] / float(self.o_maxcols)))
         self.tile_rows = int(self.region['rows'] / ceil(self.region['rows'] / float(self.o_maxrows)))
 
-        # suffix for existing mask (during overriding will be saved 
-        # into raster named:self.o_output + this suffix) 
+        ## suffix for existing mask (during overriding will be saved 
+        ## into raster named:self.o_output + this suffix) 
         self.original_mask_suffix = "_temp_MASK"
         
-        # check names of temporary rasters, which module may create 
+        ## check names of temporary rasters, which module may create 
         maps = []
         for suffix in ('.red', '.green', '.blue', '.alpha', self.original_mask_suffix ):
             rast = self.o_output + suffix
@@ -176,9 +177,8 @@ class WMSbase:
             grass.fatal("Please change output name, or change names of these rasters:" + ",".join(maps) + \
                         ", module needs to create this temporary maps during runing"  )
 
-        # default format for GDAL library
+        ## default format for GDAL library
         self.gdal_drv_format = "GTiff"
-
 
 
         self._debug("_initialize_parameters", "finished")
@@ -186,14 +186,14 @@ class WMSbase:
     def _getCapabilities(self, options): 
         """!Get capabilities from WMS server
         """
-        # download capabilities file
+        ## download capabilities file
         cap_url = options['mapserver_url'] + "service=WMS&request=GetCapabilities&version=" + options['wms_version']
         try:
             cap = urlopen(cap_url)
         except IOError:
             grass.fatal(_("Unable to get capabilities from '%s'") % ptions['mapserver_url'])
 
-        # check DOCTYPE first      
+        ## check DOCTYPE first      
         if 'text/xml' not in cap.info()['content-type']:
             grass.fatal(_("Unable to get capabilities: %s. File is not XML.") % cap_url)
      
@@ -213,8 +213,8 @@ class WMSbase:
         if self.proj_srs == self.proj_location: # TODO: do it better
             for param in bbox:
                 bbox[param] = self.region[param]
-        # if location projection and wms query projection are diferent, corner points of region
-        # are transformed into wms projection and then bbox is created from extreme coordinates  
+        ## if location projection and wms query projection are different, corner points of region are transformed
+        ## into wms projection and then bbox is created from extreme coordinates of the transformed points  
         else:
             temp_region = self._tempfile()
             
@@ -268,20 +268,20 @@ class WMSbase:
         """!Import downloaded data into GRASS, reproject data if needed
         using gdalwarp
         """
-        # reprojection of raster
+        ## reprojection of raster
         if self.proj_srs != self.proj_location: # TODO: do it better
 
             grass.message("Reprojecting raster...")
             temp_warpmap = self._tempfile()
      
-            #RGB rasters - alpha layer is added for cropping edges of projected raster
+            ## RGB rasters - alpha layer is added for cropping edges of projected raster
             if self.temp_map_bands_num == 3:
                 ps = subprocess.Popen(['gdalwarp',
                                    '-s_srs', '%s' % self.proj_srs,
                                    '-t_srs', '%s' % self.proj_location,
                                    '-r', self.o_method, '-dstalpha',
                                    self.temp_map, temp_warpmap])
-            #RGBA rasters
+            ## RGBA rasters
             else:
                 ps = subprocess.Popen(['gdalwarp',
                                        '-s_srs', '%s' % self.proj_srs,
@@ -291,7 +291,7 @@ class WMSbase:
             ps.wait()
             if ps.returncode != 0:
                 grass.fatal(_('gdalwarp failed'))
-        # raster projection is same as projection of location
+        ## raster projection is same as projection of location
         else:
             temp_warpmap = self.temp_map
 
@@ -306,21 +306,22 @@ class WMSbase:
         ## information for destructor to cleanup temp_layers, created with r.in.gdal
         self.cleanup_layers = True
     
-        # setting region for full extend of imported raster
+        ## setting region for full extend of imported raster
         os.environ['GRASS_REGION'] = grass.region_env(rast = self.o_output + '.red')
         
-        # mask created from alpha layer, which  describes real extend of warped layer (it is not rectangle),
-        # also mask contains transparent parts of raster
+        ## mask created from alpha layer, which  describes real extend of warped layer (may not be a rectangle),
+        ## also mask contains transparent parts of raster
         if grass.find_file( self.o_output + '.alpha', element = 'cell', mapset = '.' )['name']:
 
-            # saving current mask (if exists) into temp raster
+            ## saving current mask (if exists) into temp raster
             if grass.find_file( 'MASK', element = 'cell', mapset = '.' )['name']:
+
                 if grass.run_command('g.copy',
                                    quiet = True,
                                    rast = 'MASK,' + self.o_output + self.original_mask_suffix) != 0:    
                     grass.fatal(_('r.mask failed'))
 
-            # info for destructor
+            ## info for destructor
             self.cleanup_mask = True
 
             if grass.run_command('r.mask',
@@ -352,7 +353,7 @@ class WMSbase:
         if temp_file is None:
             grass.fatal(_("Unable to create temporary files"))
         
-        # list of created tempfiles for destructor
+        ## list of created tempfiles for destructor
         self.temp_files_to_cleanup.append(temp_file)
 
         return temp_file
