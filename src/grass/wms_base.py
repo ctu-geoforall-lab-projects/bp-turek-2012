@@ -84,7 +84,7 @@ class WMSBase:
         else:
             self.transparent = 'FALSE'   
         
-        self.o_mapserver_url = options['mapserver_url'].strip() + "?" 
+        self.o_mapserver_url = options['mapserver'].strip() + "?" 
         self.o_layers = options['layers'].strip()
         self.o_styles = options['styles'].strip()
         self.o_output = options['output']
@@ -187,11 +187,11 @@ class WMSBase:
         """!Get capabilities from WMS server
         """
         # download capabilities file
-        cap_url = options['mapserver_url'] + "service=WMS&request=GetCapabilities&version=" + options['wms_version']
+        cap_url = options['mapserver'] + "service=WMS&request=GetCapabilities&version=" + options['wms_version']
         try:
             cap = urlopen(cap_url)
         except IOError:
-            grass.fatal(_("Unable to get capabilities from '%s'") % ptions['mapserver_url'])
+            grass.fatal(_("Unable to get capabilities from '%s'") % ptions['mapserver'])
         
         # check DOCTYPE first      
         if 'text/xml' not in cap.info()['content-type']:
