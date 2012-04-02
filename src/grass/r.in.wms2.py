@@ -1,17 +1,16 @@
 #!/usr/bin/env python
 """
-    MODULE:    r.in.wms2
-    
-    AUTHOR(S): Stepan Turek <stepan.turek AT seznam.cz>
-    
-    PURPOSE:   Downloads and imports data from WMS server.
-    
-    COPYRIGHT: (C) 2012 Stepan Turek, and by the GRASS Development Team
-    
-               This program is free software under the GNU General Public
-               License (>=v2). Read the file COPYING that comes with GRASS
-               for details.
-    """
+MODULE:    r.in.wms2
+
+AUTHOR(S): Stepan Turek <stepan.turek AT seznam.cz>
+
+PURPOSE:   Downloads and imports data from WMS server.
+
+COPYRIGHT: (C) 2012 Stepan Turek, and by the GRASS Development Team
+
+This program is free software under the GNU General Public License
+(>=v2). Read the file COPYING that comes with GRASS for details.
+"""
 
 #%module
 #% description: Downloads and imports data from WMS servers.
@@ -21,7 +20,7 @@
 #%end
 
 #%option
-#% key: mapserver_url
+#% key: mapserver
 #% type: string
 #% description:URL of WMS server 
 #% required: yes
@@ -140,20 +139,21 @@
 #%end
 
 import sys
-import atexit
 
 import grass.script as grass
 
-from wms_drv import WMSdrv
-from wms_gdal_drv import WMSgdaldrv
-    
 def main():
     if flags['d']:
         grass.debug("Using own driver")
-        wms = WMSdrv(options, flags)
+        from wms_drv import WMSDrv
+        wms = WMSDrv(options, flags)
     else:
         grass.debug("Using GDAL WMS driver")
-        wms = WMSgdaldrv(options, flags)
+        from wms_gdal_drv import WMSGdalDrv
+        wms = WMSGdalDrv(options, flags)
+
+    wms.Download()
+    
     return 0
 
 if __name__ == "__main__":
