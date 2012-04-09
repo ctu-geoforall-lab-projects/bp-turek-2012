@@ -152,7 +152,7 @@ def main():
         from wms_gdal_drv import WMSGdalDrv
         wms = WMSGdalDrv(options, flags)
 
-    wms.Download()
+
     
     return 0
 

@@ -19,11 +19,14 @@ class WMSBase:
         if flags['c']:
             self._getCapabilities(options)
         else:
-            self._initializeParameters(options, flags)  
+            self._getMap(options, flags)  
 
-    def Download(self):
+    def _getMap(self, options, flags):
         """!Download data from WMS server and import data
         (using GDAL library) into GRASS as a raster map."""
+
+        self._initializeParameters(options, flags)  
+
         self.bbox     = self._computeBbox()
         
         self.temp_map = self._download()  
@@ -187,18 +190,13 @@ class WMSBase:
         """!Get capabilities from WMS server
         """
         # download capabilities file
-        cap_url = options['mapserver'] + "service=WMS&request=GetCapabilities&version=" + options['wms_version']
+        cap_url = options['mapserver'] + "service=WMS&request=GetCapabilities&version=" + options['wms_version'] 
         try:
             cap = urlopen(cap_url)
         except IOError:
-            grass.fatal(_("Unable to get capabilities from '%s'") % ptions['mapserver'])
-        
-        # check DOCTYPE first      
-        if 'text/xml' not in cap.info()['content-type']:
-            grass.fatal(_("Unable to get capabilities: %s. File is not XML.") % cap_url)
+            grass.fatal(_("Unable to get capabilities from '%s'") % options['mapserver'])
         
         cap_lines = cap.readlines()
-        grass.message("a") 
         for line in cap_lines: 
             grass.message(line) 
         
