@@ -1,0 +1,11 @@
+svn co https://saga-gis.svn.sourceforge.net/svnroot/saga-gis/trunk/saga-gis saga-gis-trunk
+git clone git@geo102.fsv.cvut.cz:turek-saga.git # TODO read-only
+
+cp -r turek-saga/src/modules_ostepok/ saga-gis-trunk/src/
+cd saga-gis-trunk
+patch -p0 < ../turek-saga/makefile.diff
+autoreconf -i
+
+./configure --prefix=/usr/local --enable-unicode
+make
+sudo make install

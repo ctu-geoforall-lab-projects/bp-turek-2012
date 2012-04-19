@@ -1,0 +1,18 @@
+Index: configure.in
+===================================================================
+--- configure.in	(revision 1229)
++++ configure.in	(working copy)
+@@ -272,4 +272,6 @@
+ 	src/modules_terrain_analysis/terrain_analysis/ta_morphometry/Makefile \
+ 	src/modules_terrain_analysis/terrain_analysis/ta_preprocessor/Makefile \
+ 	src/modules_terrain_analysis/terrain_analysis/ta_profiles/Makefile \
++	src/modules_ostepok/Makefile \
++	src/modules_ostepok/ostepok/Makefile \
+ )
+Index: src/Makefile.am
+===================================================================
+--- src/Makefile.am	(revision 1229)
++++ src/Makefile.am	(working copy)
+@@ -1 +1 @@
+-SUBDIRS = saga_core modules modules_contrib modules_geostatistics modules_images modules_io modules_projection modules_recreations modules_simulation modules_terrain_analysis modules_lectures
++SUBDIRS = saga_core modules modules_contrib modules_geostatistics modules_images modules_io modules_projection modules_recreations modules_simulation modules_terrain_analysis modules_lectures modules_ostepok
