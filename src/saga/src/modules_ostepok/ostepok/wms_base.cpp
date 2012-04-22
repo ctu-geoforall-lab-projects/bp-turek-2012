@@ -79,11 +79,11 @@ TSG_Rect        CWMS_WMS_Base::_ComputeBbox	(void)
 				continue;
 			    }
 
-			    if   (wmsReqBBox.yMax > y[i_coorY]) wmsReqBBox.yMax = y[i_coorY];
-			    else if   (wmsReqBBox.yMin < y[i_coorY]) wmsReqBBox.yMin = y[i_coorY];
+			    if   (wmsReqBBox.yMax < y[i_coorY]) wmsReqBBox.yMax = y[i_coorY];
+			    else if   (wmsReqBBox.yMin > y[i_coorY]) wmsReqBBox.yMin = y[i_coorY];
 
-			    if   (wmsReqBBox.xMax > x[i_coorX]) wmsReqBBox.xMax = x[i_coorX];
-			    else if   (wmsReqBBox.xMin < x[i_coorX]) wmsReqBBox.xMin = x[i_coorX];
+			    if   (wmsReqBBox.xMax < x[i_coorX]) wmsReqBBox.xMax = x[i_coorX];
+			    else if   (wmsReqBBox.xMin > x[i_coorX]) wmsReqBBox.xMin = x[i_coorX];
 			}
 		}
 	}
@@ -100,7 +100,7 @@ TSG_Rect        CWMS_WMS_Base::_ComputeBbox	(void)
 
 void	CWMS_WMS_Base::_CreateOutputMap(wxString & tempMapPath)
 {
-	if(m_bReProj)    _GdalWarp		(tempMapPath);
+	if(m_bReProj)  tempMapPath =  _GdalWarp		(tempMapPath);
 
 	wxImage	Image;
 	if( Image.LoadFile(tempMapPath) == false )
@@ -141,7 +141,7 @@ void	CWMS_WMS_Base::_CreateOutputMap(wxString & tempMapPath)
 
 }
 
-void	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )//TODO virtual
+wxString	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )
 {
 // reprojectiong raster into demanded projection, modified code from http://www.gdal.org/warptut.html
 
@@ -152,7 +152,10 @@ void	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )//TODO virtual
 	GDALDatasetH tempMapDataset;
 
 	tempMapDataset = GDALOpen(tempMapPath.mb_str(), GA_ReadOnly );
-
+	if(tempMapDataset == NULL)
+	{
+		throw WMS_Exception(wxT("Unable to create dataset."));
+	}
 
 	// Create output with same datatype as first input band.
 
@@ -213,10 +216,14 @@ void	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )//TODO virtual
 	GDALDestroyGenImgProjTransformer( hTransformArg );
 
 	// Create the output file.
+	wxString warpedTempMapPath = m_TempDir +wxT("/") + wxT("SAGAWmsWarpedTempMap.tiff");
+	warpedTemMapDataset = GDALCreate( GdalF,  warpedTempMapPath.mb_str(), nPixels, nLines,
+			     GDALGetRasterCount(tempMapDataset), tempMapDataType, NULL );
 
-	warpedTemMapDataset = GDALCreate( GdalF, tempMapPath.mb_str(), nPixels, nLines,
-			     GDALGetRasterCount(tempMapDataset), tempMapDataType, NULL );//TODO cesta
-
+	if(warpedTemMapDataset == NULL)
+	{
+		throw WMS_Exception(wxT("Unable to create dataset."));
+	}
 	// Write out the projection definition.
 
 	GDALSetProjection( warpedTemMapDataset, pDstWKT );
@@ -241,7 +248,6 @@ void	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )//TODO virtual
 	psWarpOptions->pfnProgress = GDALTermProgress;
 
 	  // Establish reprojection transformer.
-
 	psWarpOptions->pTransformerArg =
 	GDALCreateGenImgProjTransformer( tempMapDataset,
 			       GDALGetProjectionRef(tempMapDataset),
@@ -259,9 +265,12 @@ void	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )//TODO virtual
 			GDALGetRasterXSize( warpedTemMapDataset ),
 			GDALGetRasterYSize( warpedTemMapDataset ) );
 
+	//TODOCE_Failure
+
 	GDALDestroyGenImgProjTransformer( psWarpOptions->pTransformerArg );
 	GDALDestroyWarpOptions( psWarpOptions );
 
 	GDALClose( warpedTemMapDataset );
 	GDALClose( tempMapDataset );
+	return warpedTempMapPath;
 }

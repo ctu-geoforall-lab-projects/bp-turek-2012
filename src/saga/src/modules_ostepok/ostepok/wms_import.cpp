@@ -308,24 +308,17 @@ bool CWMS_Import::Create_Layers_Dialog( std::vector<CWMS_Layer*> layers, CSG_Par
 		}
 
 		if( bPrevIsParrent) parrentLayerPar = layerPar;
-
-		//parLayers.Set_Callback_On_Parameter_Changed(_On_Layer_Changed);TODO
 	     }
 
 	    return true;
     }
 
 
-int CWMS_Import::_On_Layer_Changed(CSG_Parameter *pParameter, int Flags)
-{
 
-//TODO
-}
 
 bool CWMS_Import::Create_Settings_Dialog( std::vector<CWMS_Layer*> selectedLayers, CSG_Parameters & parSettings)
 {
 // builds dialog for WMS request settings
-
 	CSG_Parameter * reqPropertiesNode = parSettings.Add_Node(NULL, "ND_REQ_PROPERTIES", _TL("Request properties"), _TL(""));
 	CSG_Parameter * projNode = parSettings.Add_Node(reqPropertiesNode, "ND_PROJ", _TL("Projection options"), _TL(""));
 
@@ -339,6 +332,7 @@ bool CWMS_Import::Create_Settings_Dialog( std::vector<CWMS_Layer*> selectedLayer
 	}
 
 	parSettings.Add_Choice( projNode, SG_T("PROJ"), _TL("Choose projection"),_TL("") , projChoiceItems);
+
 
 	CSG_Parameter * reProjNode = parSettings.Add_Value( projNode, SG_T("REPROJ"), _TL("Reproject downloaded raster"),_TL(""),PARAMETER_TYPE_Bool, false);
 
@@ -370,6 +364,7 @@ bool CWMS_Import::Create_Settings_Dialog( std::vector<CWMS_Layer*> selectedLayer
 	parSettings.Add_Choice(reqPropertiesNode	, "FORMAT"	, _TL("Format")		, _TL(""), m_WMS->m_Capabilities.m_Formats);
 
 	parSettings.Add_Value( reqPropertiesNode, SG_T("SIZE_X"), _TL("Requeste image X size:"),_TL(""),PARAMETER_TYPE_Int, 1000);
+
 	parSettings.Add_Value( reqPropertiesNode, SG_T("SIZE_Y"), _TL("Requeste image Y size:"),_TL(""),PARAMETER_TYPE_Int, 1000);
 
 
@@ -396,8 +391,17 @@ bool CWMS_Import::Create_Settings_Dialog( std::vector<CWMS_Layer*> selectedLayer
 			if( layerStylesCh.Length()!=0 )  parSettings.Add_Choice( stylesNode,  wxString::Format(SG_T("style_%d"), (int)selectedLayers[i_Layer]->m_id).c_str(), selectedLayers[i_Layer]->m_Title,_TL(""), layerStylesCh );
 		}
 	}
+
+	parSettings.Set_Callback_On_Parameter_Changed(_On_Proj_Changed);
+	parSettings.Set_Callback(true);
+
 }
 
+
+int CWMS_Import::_On_Proj_Changed(CSG_Parameter *pParameter, int Flags)
+{
+
+}
 
 std::vector<wxString>  CWMS_XmlHandlers::_Get_Children_Content(class wxXmlNode *pNode, const wxString & children_name)
 {

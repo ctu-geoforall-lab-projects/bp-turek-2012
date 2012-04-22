@@ -127,7 +127,7 @@ protected:
 
 	bool					Create_Settings_Dialog	(std::vector<CWMS_Layer*> selectedLayers, CSG_Parameters & parSettings);
 
-	static int				_On_Layer_Changed	(CSG_Parameter *pParameter, int Flags);
+	static int				_On_Proj_Changed	(CSG_Parameter *pParameter, int Flags);
 
 	virtual bool				On_Execute		(void);
 
@@ -215,7 +215,7 @@ protected:
 
 	wxString				_CreateGdalDrvXml	(void);
 
-	void	_GdalWarp		(  wxString & tempMapPath );//TODO virtual
+	 wxString				_GdalWarp		(  wxString & tempMapPath );
 
 	//virtual bool getMap( void );
 

@@ -86,39 +86,39 @@ void CWMS_Capabilities::_Get_Capabilities(wxXmlNode *pRoot)
 	wxXmlNode	*pNode, *pChild;
 
 	// 1. Parsing Service Tag
+	CWMS_XmlHandlers::_Get_Node_PropVal(pRoot, m_Version, wxT("version"));//TODO version warning?
 
-	if( (pNode = CWMS_XmlHandlers::_Get_Child(pRoot, SG_T("Service"))) == NULL)
+	if (!m_Version.Cmp(wxT("1.3.0")))	m_ProjTag = wxT("CRS");
+	else					m_ProjTag = wxT("SRS");
+
+
+	if( (pNode = CWMS_XmlHandlers::_Get_Child(pRoot, wxT("Service"))) == NULL)
 	{
-	    throw WMS_Exception(wxT("Unable to find <Service> tag in GetCapabilities response file."));;
+	    throw WMS_Exception(wxT("Unable to find <Service> tag in GetCapabilities response file."));
 	}
 
-	CWMS_XmlHandlers::_Get_Node_PropVal(pRoot, m_Version, SG_T("Version"));//TODO version warning?
+	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Name		, wxT("Name"));//TODO cyklus
+	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Title		, wxT("Title"));
+	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Abstract		, wxT("Abstract"));
+	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Fees		, wxT("Fees"));
+	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Access		, wxT("AccessConstraints"));
+	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_MaxLayers		, wxT("LayerLimit"));
+	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_MaxWidth		, wxT("MaxWidth"));
+	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_MaxHeight		, wxT("MaxHeight"));
+	CWMS_XmlHandlers::_Get_Child_PropVal(pNode, m_Online		, wxT("OnlineResource"), wxT("xlink:href"));
 
-	if (!m_Version.Cmp( SG_T("1.3.0")))	m_ProjTag = SG_T("CRS");
-	else					m_ProjTag = SG_T("SRS");
-
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Name		, SG_T("Name"));//TODO cyklus
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Title		, SG_T("Title"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Abstract		, SG_T("Abstract"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Fees		, SG_T("Fees"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Access		, SG_T("AccessConstraints"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_MaxLayers		, SG_T("LayerLimit"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_MaxWidth		, SG_T("MaxWidth"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_MaxHeight		, SG_T("MaxHeight"));
-	CWMS_XmlHandlers::_Get_Child_PropVal(pNode, m_Online		, SG_T("OnlineResource"), SG_T("xlink:href"));
-
-	if( (pChild = CWMS_XmlHandlers::_Get_Child(pNode, SG_T("KeywordList"))) != NULL)
+	if( (pChild = CWMS_XmlHandlers::_Get_Child(pNode, wxT("KeywordList"))) != NULL)
 	{
 		m_Keywords = CWMS_XmlHandlers::_Get_Children_Content(pNode,wxT("keyword"));
 	}
 
-	if( (pChild = CWMS_XmlHandlers::_Get_Child(pNode, SG_T("ContactInformation"))) != NULL)//TODO
+	if( (pChild = CWMS_XmlHandlers::_Get_Child(pNode, wxT("ContactInformation"))) != NULL)//TODO
 	{
 	}
 
 	// 2. Capabilities
 
-	if((pNode = CWMS_XmlHandlers::_Get_Child(pRoot, SG_T("Capability"))) == NULL)
+	if((pNode = CWMS_XmlHandlers::_Get_Child(pRoot, wxT("Capability"))) == NULL)
 	{
 		throw WMS_Exception(wxT("Unable to find <Capaility> tag in GetCapabilities response file."));;
 	}
@@ -126,14 +126,14 @@ void CWMS_Capabilities::_Get_Capabilities(wxXmlNode *pRoot)
 
 	// 2.a) Request
 
-	if( (pChild = CWMS_XmlHandlers::_Get_Child(CWMS_XmlHandlers::_Get_Child(CWMS_XmlHandlers::_Get_Child(pNode, SG_T("Request")), SG_T("GetMap")), SG_T("Format"))) != NULL )//TODO 1.0
+	if( (pChild = CWMS_XmlHandlers::_Get_Child(CWMS_XmlHandlers::_Get_Child(CWMS_XmlHandlers::_Get_Child(pNode, wxT("Request")), wxT("GetMap")), wxT("Format"))) != NULL )//TODO 1.0
 	{
 		do
 		{
-			if( !pChild->GetName().CmpNoCase(SG_T("Format")) )
+			if( !pChild->GetName().CmpNoCase(wxT("Format")) )
 			{
 				m_Formats	+= pChild->GetNodeContent().c_str();
-				m_Formats	+= SG_T("|");
+				m_Formats	+= wxT("|");
 			}
 		}
 		while( (pChild = pChild->GetNext()) != NULL );
@@ -146,7 +146,7 @@ void CWMS_Capabilities::_Get_Capabilities(wxXmlNode *pRoot)
 	// 2.c) Layers
 
 
-	if( (pNode = CWMS_XmlHandlers::_Get_Child(pNode, SG_T("Layer"))) == NULL)
+	if( (pNode = CWMS_XmlHandlers::_Get_Child(pNode, wxT("Layer"))) == NULL)
 	{
 	    throw WMS_Exception(wxT("Unanle to find any <Layer> tag in GetCapabilities response file."));
 	}
