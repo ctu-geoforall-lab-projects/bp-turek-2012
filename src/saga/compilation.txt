@@ -1,7 +1,7 @@
-svn co https://saga-gis.svn.sourceforge.net/svnroot/saga-gis/branches/release-2-0-8/ saga-gis-release
+svn co https://saga-gis.svn.sourceforge.net/svnroot/saga-gis/branches/release-2-0-8/saga-gis saga-gis-release
 git clone git@geo102.fsv.cvut.cz:bc-turek.git
 
-cp -r bc-turek/src/safa/modules_ostepok/ saga-gis-release/src/
+cp -r bc-turek/src/saga/src/modules_ostepok/ saga-gis-release/src/
 cd saga-gis-release
 patch -p0 < ../bc-turek/src/saga/makefile.diff
 autoreconf -i
