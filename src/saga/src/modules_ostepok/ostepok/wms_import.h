@@ -78,8 +78,10 @@
 #include <list>
 
 #include "wms_import.h"
+#include <stdexcept>
 
 #include <wx/protocol/http.h>
+#include <wx/string.h>
 
 ///////////////////////////////////////////////////////////
 //														 //
@@ -94,6 +96,17 @@ class CWMS_XmlHandlers;
 class CWMS_WMS_Base;
 class CWMS_WMS_Gdal_drv;
 class CWMS_Projection;
+
+
+
+
+ class WMS_Exception : public std::runtime_error
+ {
+ public:
+
+     WMS_Exception(const wxString& msg = wxT("Exception not specified")) :  runtime_error( std::string(msg.mb_str())) {}
+ };
+
 
 class CWMS_Import : public CSG_Module
 {
@@ -110,9 +123,9 @@ protected:
 
 	CWMS_WMS_Base *				m_WMS;
 
-	bool					Create_Layers_Dialog	( std::vector<CWMS_Layer*> layers, CSG_Parameters & parLayers);
+	bool					Create_Layers_Dialog	(std::vector<CWMS_Layer*> layers, CSG_Parameters & parLayers);
 
-	bool					Create_Settings_Dialog	( std::vector<CWMS_Layer*> selectedLayers, CSG_Parameters & parSettings);
+	bool					Create_Settings_Dialog	(std::vector<CWMS_Layer*> selectedLayers, CSG_Parameters & parSettings);
 
 	static int				_On_Layer_Changed	(CSG_Parameter *pParameter, int Flags);
 
@@ -132,57 +145,57 @@ public:
 	virtual ~CWMS_Capabilities(void);
 
 
-	bool				Create			( CWMS_WMS_Base * pParrentWMS);
+	void				Create			(CWMS_WMS_Base * pParrentWMS);
 
-	CSG_String			Get_Summary		(void);
-
-
-	int				m_MaxLayers, m_MaxWidth, m_MaxHeight;//TODO max constaints
-
-	CSG_String			m_Name, m_Title, m_Abstract, m_Online, m_Contact, m_Fees, m_Access, m_Formats, m_ProjTag, m_Version;
-
-	CSG_Strings			m_Keywords;
-
-	CWMS_Layer			*m_RootLayer;
+	wxString			Get_Summary		(void);
 
 	wxHTTP				m_Server;
 
+	int				m_MaxLayers, m_MaxWidth, m_MaxHeight;//TODO max constaints
+
+	wxString			m_Name, m_Title, m_Abstract, m_Online, m_Contact, m_Fees, m_Access, m_Formats, m_ProjTag, m_Version;
+
+	std::vector<wxString>		m_Keywords;
+
+	CWMS_Layer			*m_RootLayer;
+
 	CWMS_WMS_Base *			m_ParrentWMS;
 
-	CSG_Strings 			Proj_Intersect		(std::vector<CWMS_Layer* > & layers );
+	std::vector<wxString>		Proj_Intersect		(std::vector<CWMS_Layer* > & layers );
 
-	void				Get_Layers		(CWMS_Layer * layer, std::vector<CWMS_Layer* > & layers);
+	void				Get_Layers		(std::vector<CWMS_Layer* > & layers, CWMS_Layer * layer = NULL);
 
 private:
 
-	bool				_Get_Capabilities	(class wxXmlNode *pRoot);
+	void				_Get_Capabilities	(class wxXmlNode *pRoot);
 
 	void				_Reset			(void);
 
-	bool                            _Load_Layers		(class wxXmlNode *pNode, int & layer_id  ,CWMS_Layer *parrent_layer = NULL, int nDepth = 0);
+	void                            _Load_Layers		(class wxXmlNode *pNode, int & layer_id  ,CWMS_Layer *parrent_layer = NULL, int nDepth = 0);
 
 
 };
+
+
 
 class CWMS_WMS_Base
 {
 public:
 
-	CWMS_WMS_Base(void){}
+	CWMS_WMS_Base(void);
 
-	virtual ~CWMS_WMS_Base(void){}
+	virtual ~CWMS_WMS_Base(void);
 
 	//bool Create( ); reset; TODO friend cappp then hide createcap????
 
-	//bool Create(class wxHTTP *pServer, const CSG_String &Directory, CSG_String &Version);
+	//bool Create(class wxHTTP *pServer, const wxString &Directory, wxString &Version);
 	CWMS_Capabilities			m_Capabilities;
 
-	bool					m_bReProj;
+	bool					m_bReProj, m_bReProjBbox, m_bTransparent;
 
-	int					m_sizeX, m_sizeY, m_blockSizeX, m_blockSizeY;// nastavit uvnitr tridy??
+	int					m_sizeX, m_sizeY, m_blockSizeX, m_blockSizeY, m_ReProjMethod;// nastavit uvnitr tridy??
 
-	CSG_String				m_Proj, m_Format, m_Layers, m_Styles, m_ServerUrl, m_Directory, m_ReProj;
-
+	wxString				m_Proj, m_Format, m_Layers, m_Styles, m_ServerUrl, m_ReProj, m_TempDir;
 
 	TSG_Rect				m_BBox, wmsReqBBox;
 
@@ -190,19 +203,19 @@ public:
 
 	CSG_Parameter *				m_pOutputMap;
 
-	bool					Get_Map			( void );
+	void					Get_Map			(void);
 
 protected:
 
-	virtual CSG_String			_Download		( void ) = 0;
+	virtual wxString			_Download		(void) = 0;
 
-	bool					_ComputeBbox		(void);
+	TSG_Rect				_ComputeBbox		(void);
 
-	bool					_CreateOutputMap	( CSG_String & tempMapPath );
+	void					_CreateOutputMap	(wxString & tempMapPath );
 
-	CSG_String				_CreateGdalDrvXml	( void );
+	wxString				_CreateGdalDrvXml	(void);
 
-	void	_GdalWarp		(  CSG_String & tempMapPath );//TODO virtual
+	void	_GdalWarp		(  wxString & tempMapPath );//TODO virtual
 
 	//virtual bool getMap( void );
 
@@ -217,13 +230,10 @@ public:
 
 private:
 
-	CSG_String				_Download		( void );
+	wxString				_Download		(void);
 
-	CSG_String				_CreateGdalDrvXml	( void );
+	wxString				_CreateGdalDrvXml	(void);
 };
-
-
-
 
 
 
@@ -233,43 +243,43 @@ public:
 
 	CWMS_Layer(void);
 
-	virtual ~CWMS_Layer(void)	{ _Delete_Child_Layers();}
+	virtual ~CWMS_Layer(void);
 
 	void _Delete_Child_Layers(void);
 
 
-	CSG_String				m_Name, m_Title, m_Abstract, m_Version;
+	wxString				m_Name, m_Title, m_Abstract, m_Version;
 
-	CSG_Strings				m_Dimensions, m_KeywordList;
+	std::vector<wxString>				m_Dimensions, m_KeywordList;
 
 	int					m_MaxScaleD, m_MinScaleD, m_id, m_Cascaded, m_fixedWidth, m_fixedHeight;
 
 	bool					m_Opaque, m_Querryable, no_Subsets;
 
-	std::vector<class CWMS_Layer* >		 m_Layers;
+	std::vector<class CWMS_Layer* >		 m_LayerChildren;
 
 	CWMS_Layer				*m_pParrentLayer;
 
 
 
-	bool					Add_Style	( wxXmlNode * pProjNode);
+	void					Add_Style	(wxXmlNode * pProjNode);
 
-	bool					Add_Proj	( wxXmlNode * pProjNode);
+	void					Add_Proj	(wxXmlNode * pProjNode);
 
-	bool					Add_GeoBBox	( wxXmlNode * pBboxNode, CSG_String projTag );
-
-
-	bool					Assign_Styles	(std::vector<class CWMS_Style> styles) {m_Styles = styles;}
-
-	bool					Assign_Projs	(std::vector<class CWMS_Projection> projections ) {m_Projections = projections;}
+	void					Add_GeoBBox	(wxXmlNode * pBboxNode, wxString projTag);
 
 
-	std::vector<class CWMS_Style> &		Get_Styles	(void)	{ return m_Styles;}
+	void					Assign_Styles	(std::vector<class CWMS_Style> styles) {m_Styles = styles;}
 
-	std::vector<class CWMS_Projection> &	Get_Projections	(void)	{ return  m_Projections;}
+	void					Assign_Projs	(std::vector<class CWMS_Projection> projections) {m_Projections = projections;}
 
 
-	bool					Create		(wxXmlNode * pNode, CWMS_Layer * pParrentLayer, const int layer_id, CSG_String m_ProjTag);
+	std::vector<class CWMS_Style> &		Get_Styles	(void)	{return m_Styles;}
+
+	std::vector<class CWMS_Projection> &	Get_Projections	(void)	{return  m_Projections;}
+
+
+	void					Create		(wxXmlNode * pNode, CWMS_Layer * pParrentLayer, const int layer_id, wxString m_ProjTag);
 
 private:
 
@@ -285,13 +295,13 @@ class CWMS_Projection
 {
 public:
 
-	CWMS_Projection(void)		{}
+    CWMS_Projection(void)		{m_Projection.Clear(); m_GeoBBox;}
 
 	virtual ~CWMS_Projection(void)	{}
 
 	TSG_Rect			m_GeoBBox;
 
-	CSG_String			m_Projection;
+	wxString			m_Projection;
 };
 
 class CWMS_Style
@@ -302,9 +312,9 @@ public:
 
 	virtual ~CWMS_Style(void)	{}
 
-	CSG_String			m_Title;
+	wxString			m_Title;
 
-	CSG_String			m_Name;
+	wxString			m_Name;
 };
 
 
@@ -312,19 +322,19 @@ class CWMS_XmlHandlers
 {
 public:
 
-	static class wxXmlNode *		_Get_Child		(class wxXmlNode *pNode, const CSG_String &Name);
+	static class wxXmlNode *		_Get_Child		(class wxXmlNode *pNode, const wxString &Name);
 
-	static bool				_Get_Child_Content	(class wxXmlNode *pNode, CSG_String &Value, const CSG_String &Name);
+	static bool				_Get_Child_Content	(class wxXmlNode *pNode, wxString &Value, const wxString &Name);
 
-	static bool				_Get_Child_Content	(class wxXmlNode *pNode, int        &Value, const CSG_String &Name);
+	static bool				_Get_Child_Content	(class wxXmlNode *pNode, int        &Value, const wxString &Name);
 
-	static bool				_Get_Child_Content	(class wxXmlNode *pNode, double     &Value, const CSG_String &Name);
+	static bool				_Get_Child_Content	(class wxXmlNode *pNode, double     &Value, const wxString &Name);
 
-	static bool				_Get_Node_PropVal	(class wxXmlNode *pNode, CSG_String &Value, const CSG_String &Property);
+	static bool				_Get_Node_PropVal	(class wxXmlNode *pNode, wxString &Value, const wxString &Property);
 
-	static bool				_Get_Child_PropVal	(class wxXmlNode *pNode, CSG_String &Value, const CSG_String &Name, const CSG_String &Property);
+	static bool				_Get_Child_PropVal	(class wxXmlNode *pNode, wxString &Value, const wxString &Name, const wxString &Property);
 
-	static CSG_Strings			_Get_Children_Content	(class wxXmlNode *pNode, const CSG_String &children_name);
+	static std::vector<wxString>			_Get_Children_Content	(class wxXmlNode *pNode, const wxString &children_name);
 };
 
 ///////////////////////////////////////////////////////////

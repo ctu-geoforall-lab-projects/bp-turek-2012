@@ -1,7 +1,5 @@
-#include <wx/xml/xml.h>
-#include <wx/image.h>
-
 #include "wms_import.h"
+#include <wx/xml/xml.h>
 
 
 CWMS_Layer::CWMS_Layer(void)
@@ -16,63 +14,88 @@ CWMS_Layer::CWMS_Layer(void)
 
 }
 
-bool	CWMS_Layer::Create ( wxXmlNode * pNode, CWMS_Layer * pParrentLayer, const int layer_id, CSG_String m_ProjTag)
+CWMS_Layer::~CWMS_Layer(void)
 {
+	_Delete_Child_Layers();
+}
 
+
+void CWMS_Layer::_Delete_Child_Layers(void)
+{
+// removes layers recursively
+	for(int i=0; i < m_LayerChildren.size(); i++)
+	{
+		delete(m_LayerChildren[i]);
+	}
+}
+
+void	CWMS_Layer::Create ( wxXmlNode * pLayerNode, CWMS_Layer * pParrentLayer, const int layerId, wxString m_ProjTag)
+{
+// parses layer attributes
 	if(pParrentLayer == NULL)
 	{
 		m_pParrentLayer = NULL;
 	}
+
 	else
 	{
-		pParrentLayer->m_Layers.push_back(this);
-		m_pParrentLayer = pParrentLayer;//TODO setParrentLayer
+		// connecting the layer with parrent layer and oposite
+		m_pParrentLayer = pParrentLayer;
+		pParrentLayer->m_LayerChildren.push_back(this);
+
+		//attributes which are inherited from parrent layer
 		Assign_Projs(pParrentLayer->Get_Projections());
 		Assign_Styles(pParrentLayer->Get_Styles());
 		m_MaxScaleD = pParrentLayer->m_MaxScaleD;
 		m_MinScaleD = pParrentLayer->m_MinScaleD;
 	}
 
+	m_id = layerId;
 
+	// getting values from GetCapabilities response
+	CWMS_XmlHandlers::_Get_Child_Content(pLayerNode, m_Name, wxT("Name"));
+	CWMS_XmlHandlers::_Get_Child_Content(pLayerNode, m_Title, wxT("Title"));
+	CWMS_XmlHandlers::_Get_Child_Content(pLayerNode, m_Abstract, wxT("Abstract"));
+	CWMS_XmlHandlers::_Get_Child_Content(pLayerNode, m_MaxScaleD, wxT("MaxScaleDenomminator"));
+	CWMS_XmlHandlers::_Get_Child_Content(pLayerNode, m_MinScaleD, wxT("MinScaleDenomminator"));
 
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Name, SG_T("Name"));// TODO merge
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Title, SG_T("Title"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Abstract, SG_T("Abstract"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_MaxScaleD, SG_T("MaxScaleDenomminator"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_MinScaleD, SG_T("MinScaleDenomminator"));
-	m_id = layer_id;
-
-	CSG_String propVal;
-	CWMS_XmlHandlers::_Get_Node_PropVal(pNode, propVal, "queryalbe");//TODO cyklus
-	if(propVal == SG_T("1")) m_Querryable = false;
+	wxString propVal;
+	CWMS_XmlHandlers::_Get_Node_PropVal(pLayerNode, propVal, wxT("queryalbe"));
+	if(propVal == wxT("1")) m_Querryable = false;
 	propVal.Clear();
 
-	CWMS_XmlHandlers::_Get_Node_PropVal(pNode, propVal, "opaque");//TODO cyklus
-	if(propVal == SG_T("1")) m_Opaque = false;
+	CWMS_XmlHandlers::_Get_Node_PropVal(pLayerNode, propVal, wxT("opaque"));
+	if(propVal == wxT("1")) m_Opaque = false;
 	propVal.Clear();
 
-	CWMS_XmlHandlers::_Get_Node_PropVal(pNode, propVal, "noSubsets");//TODO cyklus
-	if(propVal == SG_T("1")) m_Querryable = false;
+	CWMS_XmlHandlers::_Get_Node_PropVal(pLayerNode, propVal, wxT("noSubsets"));
+	if(propVal == wxT("1")) m_Querryable = false;
 	propVal.Clear();
 
-	//CWMS_XmlHandlers::_Get_Node_PropVal(pNode, propVal, "cascaded");//TODO cyklus
-	//if(propVal.Length() == 0) m_Cascaded = CSG_String::Format( SG_T("%d", propVal));
-	//propVal.Clear();
+	CWMS_XmlHandlers::_Get_Node_PropVal(pLayerNode, propVal, wxT("cascaded"));
+	if(propVal.Length() == 0)   propVal.ToLong((long*)&m_Cascaded);
+	propVal.Clear();
 
+	CWMS_XmlHandlers::_Get_Node_PropVal(pLayerNode, propVal, wxT("fixedWidth"));
+	if(propVal.Length() == 0)   propVal.ToLong((long*)&m_fixedWidth);
+	propVal.Clear();
+
+	CWMS_XmlHandlers::_Get_Node_PropVal(pLayerNode, propVal, wxT("fixedHeiht"));
+	if(propVal.Length() == 0)   propVal.ToLong((long*)&m_fixedHeight);
+	propVal.Clear();
 
 	wxXmlNode   *pChild;
-	if( (pChild = CWMS_XmlHandlers::_Get_Child(pNode, SG_T("KeywordList"))) != NULL )
+	if( (pChild = CWMS_XmlHandlers::_Get_Child(pLayerNode,wxT("KeywordList"))) != NULL )
 	{
-		m_KeywordList = CWMS_XmlHandlers::_Get_Children_Content(pChild,"keyword");
+		m_KeywordList = CWMS_XmlHandlers::_Get_Children_Content(pChild, wxT("keyword"));
 	}
 
-	m_Dimensions = CWMS_XmlHandlers::_Get_Children_Content(pNode,"dimension");
+	m_Dimensions = CWMS_XmlHandlers::_Get_Children_Content(pLayerNode,wxT("dimension"));
 
-
-	pChild = pNode->GetChildren();
+	pChild = pLayerNode->GetChildren();
 	do
 	{
-		if( !pChild->GetName().CmpNoCase( SG_T("Style") ) )
+		if( !pChild->GetName().CmpNoCase( wxT("Style") ) )
 		{
 		    Add_Style(pChild);
 		}
@@ -85,32 +108,28 @@ bool	CWMS_Layer::Create ( wxXmlNode * pNode, CWMS_Layer * pParrentLayer, const i
 	}
 	while( (pChild = pChild->GetNext()) != NULL );
 
-	pChild = pNode->GetChildren();
+	pChild = pLayerNode->GetChildren();
 	do
 	{
-		if( !pChild->GetName().CmpNoCase( SG_T("BoundingBox") ) )
+		if( !pChild->GetName().CmpNoCase( wxT("BoundingBox") ) )
 		{
 		    Add_GeoBBox(pChild, m_ProjTag );
 		}
 
 	}
 	while( (pChild = pChild->GetNext()) != NULL );
-
-	return true;
-
 }
 
 
-
-bool CWMS_Layer::Add_Style ( wxXmlNode * pStyleNode)
+void CWMS_Layer::Add_Style ( wxXmlNode * pStyleNode)
 {
-
+//checks if the style is not already inherited
 	bool bStyleExists = false;
-	CSG_String insertedStyleName;
+	wxString insertedStyleName;
 
 	for(int i_style = 0; i_style < m_Styles.size(); i_style++)
 	{
-		CWMS_XmlHandlers::_Get_Child_Content(pStyleNode, insertedStyleName, SG_T("Name"));
+		CWMS_XmlHandlers::_Get_Child_Content(pStyleNode, insertedStyleName, wxT("Name"));
 		if( m_Styles[i_style].m_Name.CmpNoCase(insertedStyleName) == 0)
 		{
 			bStyleExists = true;
@@ -121,24 +140,20 @@ bool CWMS_Layer::Add_Style ( wxXmlNode * pStyleNode)
 	if(!bStyleExists)
 	{
 		CWMS_Style style;
-		CWMS_XmlHandlers::_Get_Child_Content(pStyleNode, style.m_Name, SG_T("Name"));
-		CWMS_XmlHandlers::_Get_Child_Content(pStyleNode, style.m_Title, SG_T("Title"));
+		CWMS_XmlHandlers::_Get_Child_Content(pStyleNode, style.m_Name, wxT("Name"));
+		CWMS_XmlHandlers::_Get_Child_Content(pStyleNode, style.m_Title, wxT("Title"));
 		m_Styles.push_back(style);
 	}
-
-	return true;
 }
 
 
-
-
-bool CWMS_Layer::Add_Proj ( wxXmlNode * pProjNode)
+void CWMS_Layer::Add_Proj ( wxXmlNode * pProjNode)
 {
-
+//checks if the projection is not already inherited
 	bool bProjExists = false;
 	for(int i_proj = 0; i_proj < m_Projections.size(); i_proj++)
 	{
-		if( m_Projections[i_proj].m_Projection.CmpNoCase(pProjNode->GetNodeContent().c_str()) == 0)//TODO nocase
+		if( m_Projections[i_proj].m_Projection.CmpNoCase(pProjNode->GetNodeContent()) == 0)
 		{
 			bProjExists = true;
 			break;
@@ -148,47 +163,31 @@ bool CWMS_Layer::Add_Proj ( wxXmlNode * pProjNode)
 	if(!bProjExists)
 	{
 		CWMS_Projection projection;
-		projection.m_Projection =  pProjNode->GetNodeContent().c_str();
+		projection.m_Projection =  pProjNode->GetNodeContent();
 		m_Projections.push_back(projection);
 	}
-
-	return true;
 }
 
-bool CWMS_Layer::Add_GeoBBox ( wxXmlNode * pBboxNode, CSG_String projTag)//todo
+
+void CWMS_Layer::Add_GeoBBox ( wxXmlNode * pBboxNode, wxString projTag)
 {
+//appends bbox to corresponding projection
 	for(int i_proj = 0; i_proj < m_Projections.size(); i_proj++)
 	{
-		CSG_String	s;
+		wxString	s;
 		CWMS_XmlHandlers::_Get_Node_PropVal(pBboxNode, s, projTag);
 
 		if( !m_Projections[i_proj].m_Projection.CmpNoCase(s))
 		{
-
-			if(			!(CWMS_XmlHandlers::_Get_Node_PropVal(pBboxNode, s, "minx") && s.asDouble(m_Projections[i_proj].m_GeoBBox.xMin))//TODO
-					||	!(CWMS_XmlHandlers::_Get_Node_PropVal(pBboxNode, s, "miny") && s.asDouble(m_Projections[i_proj].m_GeoBBox.yMin))
-					||	!(CWMS_XmlHandlers::_Get_Node_PropVal(pBboxNode, s, "maxx") && s.asDouble(m_Projections[i_proj].m_GeoBBox.xMax))
-					||	!(CWMS_XmlHandlers::_Get_Node_PropVal(pBboxNode, s, "maxy") && s.asDouble(m_Projections[i_proj].m_GeoBBox.yMax)) )
+			if(			!(CWMS_XmlHandlers::_Get_Node_PropVal(pBboxNode, s, wxT("minx")) && s.ToDouble(&m_Projections[i_proj].m_GeoBBox.xMin))
+					||	!(CWMS_XmlHandlers::_Get_Node_PropVal(pBboxNode, s, wxT("miny")) && s.ToDouble(&m_Projections[i_proj].m_GeoBBox.yMin))
+					||	!(CWMS_XmlHandlers::_Get_Node_PropVal(pBboxNode, s, wxT("maxx")) && s.ToDouble(&m_Projections[i_proj].m_GeoBBox.xMax))
+					||	!(CWMS_XmlHandlers::_Get_Node_PropVal(pBboxNode, s, wxT("maxy")) && s.ToDouble(&m_Projections[i_proj].m_GeoBBox.yMax)) )
 			{
 				m_Projections[i_proj].m_GeoBBox.xMin	= m_Projections[i_proj].m_GeoBBox.yMin	= m_Projections[i_proj].m_GeoBBox.xMax	= m_Projections[i_proj].m_GeoBBox.yMax	= 0.0;
-
-
 			}
-
 		}
-
 	}
-
-	return true;
-
 }
 
-void CWMS_Layer::_Delete_Child_Layers(void)
-{
-    for(int i=0; i < m_Layers.size(); i++)
-    {
-	    delete(m_Layers[i]);
-    }
 
-
-}

@@ -1,46 +1,59 @@
 #include "wms_import.h"
 
-#include <wx/image.h>
 #include <projects.h>
+
+#include <wx/image.h>
+#include <wx/stdpaths.h>
 
 #include <gdalwarper.h>
 #include "ogr_spatialref.h"
+
 #define PROJ4_FREE(p)	if( p )	{	pj_free((PJ *)p);	p	= NULL;	}//TODO
 
-bool		CWMS_WMS_Base::Get_Map		( void )
-{
-	_ComputeBbox	();
-	CSG_String tempMapPath = _Download();
-	_CreateOutputMap		( tempMapPath );
 
+CWMS_WMS_Base::CWMS_WMS_Base(void)
+{
+	wxStandardPaths StdPaths;
+	m_TempDir = StdPaths.GetTempDir();
 }
 
 
+CWMS_WMS_Base::~CWMS_WMS_Base(void){}
 
 
-bool		CWMS_WMS_Base::_ComputeBbox	(void)
+void		CWMS_WMS_Base::Get_Map		( void )
 {
-	if(m_bReProj)
+// public function. which calls private functons
+	wmsReqBBox =		_ComputeBbox();
+
+	wxString tempMapPath =	_Download();//abstract function, possible to define various wms drivers
+
+				_CreateOutputMap(tempMapPath);
+}
+
+
+TSG_Rect        CWMS_WMS_Base::_ComputeBbox	(void)
+{
+	TSG_Rect wmsReqBBox;
+	if(m_bReProj && m_bReProjBbox)
 	{
+	// destination bbox points are transformed into wms
+	// projection and then bbox is created from extreme coordinates
+	// of the transformed points
 		projPJ src ;
 		wxString proj(m_Proj.c_str());//TODO taky malym???
 		wxString init (SG_T("+init="));
 		proj = proj.MakeLower();
 
-
-		modul->Message_Add(init+proj);
-
 		if(!(src = pj_init_plus(SG_STR_SGTOMB(m_ReProj))))
 		{
-			return false;//TODO
+			   throw WMS_Exception(wxT("Wrong PROJ4 format of destination projection."));
 		}
-		modul->Message_Add( CSG_String(pj_get_def(src, 0)) );
-		modul->Message_Add(m_ReProj);
 
 		projPJ dst ;
-		 if(!(dst = pj_init_plus(SG_STR_SGTOMB((init+proj)))))
+		if(!(dst = pj_init_plus(SG_STR_SGTOMB((init+proj)))))
 		{
-			return false;
+		    throw WMS_Exception(wxT("Wrong PROJ4 format:") ); //+ m_ReProj());
 		}
 
 		const int size = 2;
@@ -52,49 +65,47 @@ bool		CWMS_WMS_Base::_ComputeBbox	(void)
 		PROJ4_FREE(src);
 		PROJ4_FREE(dst);
 
-
-
 		for(int i_coorX = 0; i_coorX < size; i_coorX++)
 		{
 
-		    for(int i_coorY = 0; i_coorY < size; i_coorY++)
-		    {
-			if(i_coorY == 0 && i_coorX == 0)
+			for(int i_coorY = 0; i_coorY < size; i_coorY++)
 			{
-			    wmsReqBBox.yMax = y[i_coorY];
-			    wmsReqBBox.yMin = y[i_coorY];
-			    wmsReqBBox.xMax = x[i_coorX];
-			    wmsReqBBox.xMin = x[i_coorX];
-			    continue;
+			    if(i_coorY == 0 && i_coorX == 0)
+			    {
+				wmsReqBBox.yMax = y[i_coorY];
+				wmsReqBBox.yMin = y[i_coorY];
+				wmsReqBBox.xMax = x[i_coorX];
+				wmsReqBBox.xMin = x[i_coorX];
+				continue;
+			    }
+
+			    if   (wmsReqBBox.yMax > y[i_coorY]) wmsReqBBox.yMax = y[i_coorY];
+			    else if   (wmsReqBBox.yMin < y[i_coorY]) wmsReqBBox.yMin = y[i_coorY];
+
+			    if   (wmsReqBBox.xMax > x[i_coorX]) wmsReqBBox.xMax = x[i_coorX];
+			    else if   (wmsReqBBox.xMin < x[i_coorX]) wmsReqBBox.xMin = x[i_coorX];
 			}
-
-			if   (wmsReqBBox.yMax < y[i_coorY]) wmsReqBBox.yMax = y[i_coorY];
-			else if   (wmsReqBBox.yMin > y[i_coorY]) wmsReqBBox.yMin = y[i_coorY];
-
-			if   (wmsReqBBox.xMax < x[i_coorX]) wmsReqBBox.xMax = x[i_coorX];
-			else if   (wmsReqBBox.xMin > x[i_coorX]) wmsReqBBox.xMin = x[i_coorX];
-
-		    }
-
 		}
 	}
+
+	// no transformation required
 	else wmsReqBBox = m_BBox;
 
-	return true;//todo return bbox???
-
+	return wmsReqBBox;
 }
 
 
 
 
 
-bool		CWMS_WMS_Base::_CreateOutputMap		( CSG_String & tempMapPath )
+void	CWMS_WMS_Base::_CreateOutputMap(wxString & tempMapPath)
 {
-	_GdalWarp		( tempMapPath );
+	if(m_bReProj)    _GdalWarp		(tempMapPath);
+
 	wxImage	Image;
-	if( Image.LoadFile(tempMapPath.c_str()) == false )
+	if( Image.LoadFile(tempMapPath) == false )
 	{
-		modul->Message_Add(_TL("could not read image"));
+		throw WMS_Exception(wxT("Unable read image from:") + tempMapPath);
 
 	}
 	else
@@ -114,67 +125,65 @@ bool		CWMS_WMS_Base::_CreateOutputMap		( CSG_String & tempMapPath )
 			}
 		}
 
-
-
-			    //-----------------------------------------
 		pGrid->Set_Name(m_Capabilities.m_Title);//TODO layer name
 		m_pOutputMap->Set_Value(pGrid);
 		modul->DataObject_Set_Colors(pGrid, 100, SG_COLORS_BLACK_WHITE);
 
 		CSG_Parameters Parameters;
 
-		if( modul->DataObject_Get_Parameters(pGrid, Parameters) && Parameters("COLORS_TYPE") )
+		if( modul->DataObject_Get_Parameters(pGrid, Parameters) && Parameters("COLORS_TYPE") )//TODO
 		{
 			Parameters("COLORS_TYPE")->Set_Value(3);	// Color Classification Type: RGB
 			modul->DataObject_Set_Parameters(pGrid, Parameters);
 		}
-
-
-
     }
 
 
 }
 
-void	CWMS_WMS_Base::_GdalWarp		( CSG_String & tempMapPath )//TODO virtual
+void	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )//TODO virtual
 {
+// reprojectiong raster into demanded projection, modified code from http://www.gdal.org/warptut.html
+
+	GDALDataType tempMapDataType;
+	GDALDatasetH warpedTemMapDataset;
 
 
-	GDALDataType eDT;//TODO test jestli je
-	GDALDatasetH hDstDS;
+	GDALDatasetH tempMapDataset;
 
-
-	GDALDatasetH eoTiffWmsDataset;
-
-	eoTiffWmsDataset = GDALOpen( tempMapPath.b_str(), GA_ReadOnly );
-	   CPLAssert( eoTiffWmsDataset != NULL );
+	tempMapDataset = GDALOpen(tempMapPath.mb_str(), GA_ReadOnly );
 
 
 	// Create output with same datatype as first input band.
 
-	eDT = GDALGetRasterDataType(GDALGetRasterBand(eoTiffWmsDataset,1));
+	tempMapDataType = GDALGetRasterDataType(GDALGetRasterBand(tempMapDataset,1));
 
 	// Get output driver (GeoTIFF format)
-
-	GDALDriverH GdalF = GDALGetDriverByName( "GTiff" );
-	CPLAssert( GdalF != NULL );
+	wxString  gdalDrvFormat = wxT("GTiff");//TODO
+	GDALDriverH GdalF = GDALGetDriverByName(gdalDrvFormat.mb_str());
+	if(!GdalF)
+	{
+		throw WMS_Exception(wxT("Unable to find driver:") +  gdalDrvFormat);
+	}
 
 	// Get Source coordinate system.
 
-	const char *pszSrcWKT = NULL;
-	char *pszDstWKT = NULL;
+	const char *pSrcWKT = NULL;
+	char *pDstWKT = NULL;
 
-	pszSrcWKT = GDALGetProjectionRef( eoTiffWmsDataset );
-	CPLAssert( pszSrcWKT != NULL && strlen(pszSrcWKT) > 0 );
+	pSrcWKT = GDALGetProjectionRef(tempMapDataset);
+	if(!pSrcWKT && strlen(pSrcWKT))
+	{
+		throw WMS_Exception(wxT("Unable to get projection from downloaded file."));
+	}
 
 	// Setup output coordinate system that is UTM 11 WGS84.
 
 	OGRSpatialReference oSRS;
 
-	oSRS.SetUTM( 30, TRUE );
-	oSRS.SetWellKnownGeogCS( "WGS84" );
+	oSRS.importFromProj4 (m_ReProj.mb_str());
 
-	oSRS.exportToWkt( &pszDstWKT );
+	oSRS.exportToWkt( &pDstWKT );
 
 	// Create a transformer that maps from source pixel/line coordinates
 	// to destination georeferenced coordinates (not destination
@@ -184,80 +193,75 @@ void	CWMS_WMS_Base::_GdalWarp		( CSG_String & tempMapPath )//TODO virtual
 	void *hTransformArg;
 
 	hTransformArg =
-	    GDALCreateGenImgProjTransformer( eoTiffWmsDataset, pszSrcWKT, NULL, pszDstWKT,
+	    GDALCreateGenImgProjTransformer( tempMapDataset, pSrcWKT, NULL, pDstWKT,
 					     FALSE, 0, 1 );
-	CPLAssert( hTransformArg != NULL );
-
+	if(!hTransformArg)
+	{
+		throw WMS_Exception(wxT("Unable to create GDALCreateGenImgProjTransformer."));
+	}
 	// Get approximate output georeferenced bounds and resolution for file.
 
 	double adfDstGeoTransform[6];
 	int nPixels=0, nLines=0;
 	CPLErr eErr;
 
-	eErr = GDALSuggestedWarpOutput( eoTiffWmsDataset,
+	eErr = GDALSuggestedWarpOutput( tempMapDataset,
 					GDALGenImgProjTransform, hTransformArg,
 					adfDstGeoTransform, &nPixels, &nLines );
-	CPLAssert( eErr == CE_None );
+	//CPLAssert( eErr == CE_None ); TODO
 
 	GDALDestroyGenImgProjTransformer( hTransformArg );
 
 	// Create the output file.
 
-	hDstDS = GDALCreate( GdalF, "pokus1.tiff", nPixels, nLines,
-			     GDALGetRasterCount(eoTiffWmsDataset), eDT, NULL );//TODO cesta
-
-	CPLAssert( hDstDS != NULL );
+	warpedTemMapDataset = GDALCreate( GdalF, tempMapPath.mb_str(), nPixels, nLines,
+			     GDALGetRasterCount(tempMapDataset), tempMapDataType, NULL );//TODO cesta
 
 	// Write out the projection definition.
 
-	GDALSetProjection( hDstDS, pszDstWKT );
-	GDALSetGeoTransform( hDstDS, adfDstGeoTransform );
+	GDALSetProjection( warpedTemMapDataset, pDstWKT );
+	GDALSetGeoTransform( warpedTemMapDataset, adfDstGeoTransform );
 
 	// Copy the color table, if required.
 
 	GDALColorTableH hCT;
 
-	hCT = GDALGetRasterColorTable( GDALGetRasterBand(eoTiffWmsDataset,1) );
+	hCT = GDALGetRasterColorTable( GDALGetRasterBand(tempMapDataset,1) );
 	if( hCT != NULL )
-	    GDALSetRasterColorTable( GDALGetRasterBand(hDstDS,1), hCT );
-
-
+	    GDALSetRasterColorTable( GDALGetRasterBand(warpedTemMapDataset,1), hCT );
 
 	GDALWarpOptions *psWarpOptions = GDALCreateWarpOptions();
 
-	  psWarpOptions->hSrcDS  = eoTiffWmsDataset;
-	  psWarpOptions->hDstDS = hDstDS;
+	psWarpOptions->hSrcDS  = tempMapDataset;
+	psWarpOptions->hDstDS = warpedTemMapDataset;
 
-	  psWarpOptions->nBandCount = 0;
+	psWarpOptions->nBandCount = 0;
+	psWarpOptions->eResampleAlg = (GDALResampleAlg)m_ReProjMethod;
 
-
-	  psWarpOptions->pfnProgress = GDALTermProgress;
+	psWarpOptions->pfnProgress = GDALTermProgress;
 
 	  // Establish reprojection transformer.
 
-	  psWarpOptions->pTransformerArg =
-	      GDALCreateGenImgProjTransformer( eoTiffWmsDataset,
-					       GDALGetProjectionRef(eoTiffWmsDataset),
-					       hDstDS,
-					       GDALGetProjectionRef(hDstDS),
-					       FALSE, 0.0, 1 );
-	  psWarpOptions->pfnTransformer = GDALGenImgProjTransform;
+	psWarpOptions->pTransformerArg =
+	GDALCreateGenImgProjTransformer( tempMapDataset,
+			       GDALGetProjectionRef(tempMapDataset),
+			       warpedTemMapDataset,
+			       GDALGetProjectionRef(warpedTemMapDataset),
+			       FALSE, 0.0, 1 );
+	psWarpOptions->pfnTransformer = GDALGenImgProjTransform;
 
-	  // Initialize and execute the warp operation.
+	// Initialize and execute the warp operation.
 
-	  GDALWarpOperation oOperation;
+	GDALWarpOperation oOperation;
 
-	  oOperation.Initialize( psWarpOptions );
-	  oOperation.ChunkAndWarpImage( 0, 0,
-					GDALGetRasterXSize( hDstDS ),
-					GDALGetRasterYSize( hDstDS ) );
+	oOperation.Initialize( psWarpOptions );
+	oOperation.ChunkAndWarpImage( 0, 0,
+			GDALGetRasterXSize( warpedTemMapDataset ),
+			GDALGetRasterYSize( warpedTemMapDataset ) );
 
-	  GDALDestroyGenImgProjTransformer( psWarpOptions->pTransformerArg );
-	  GDALDestroyWarpOptions( psWarpOptions );
+	GDALDestroyGenImgProjTransformer( psWarpOptions->pTransformerArg );
+	GDALDestroyWarpOptions( psWarpOptions );
 
-	  GDALClose( hDstDS );
-	  GDALClose( eoTiffWmsDataset );
-
-
-
+	GDALClose( warpedTemMapDataset );
+	GDALClose( tempMapDataset );
 }
