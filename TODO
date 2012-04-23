@@ -1,0 +1,15 @@
+TODO
+
+	- text prace (adresar 'text')
+	- saga
+	  - dokumentace doxygen
+	  - const
+	  - XmlHandlers jako atribut tridy Capabilities (?)
+	- saga cmd
+	- r.in.wms2
+	  - priklady
+	- integrace WMS do wxGUI
+	  - gui/wxpython/modules/ogc_services.py (WMSDialog)
+	  - ikonky - gui/icons/grass
+	    - https://svn.osgeo.org/osgeo/graphics/trunk/toolbar-icons/24x24/
+	  - NamedSettings (ML)
