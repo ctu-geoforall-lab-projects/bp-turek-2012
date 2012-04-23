@@ -151,17 +151,17 @@ bool CWMS_Import::On_Execute(void)
 	// GetCapabilities request to server
 	try
 	{
-	    m_WMS->m_Capabilities.Create(m_WMS);
+		m_WMS->m_Capabilities.Create(m_WMS);
 	}
 	catch(WMS_Exception &except)
 	{
-	    Message_Add((CSG_String("ERROR:") + CSG_String(except.what())));
-	    return false;
+		Message_Add((CSG_String("ERROR:") + CSG_String(except.what())));
+		return false;
 	}
 	catch(std::bad_alloc& except)
 	{
-	    Message_Add(CSG_String::Format(SG_T("ERROR: Unable to allocate memomry: %s"), except.what()));
-	    return false;
+		Message_Add(CSG_String::Format(SG_T("ERROR: Unable to allocate memomry: %s"), except.what()));
+		return false;
 	}
 
 
@@ -308,9 +308,9 @@ bool CWMS_Import::Create_Layers_Dialog( std::vector<CWMS_Layer*> layers, CSG_Par
 		}
 
 		if( bPrevIsParrent) parrentLayerPar = layerPar;
-	     }
+	}
 
-	    return true;
+	return true;
     }
 
 

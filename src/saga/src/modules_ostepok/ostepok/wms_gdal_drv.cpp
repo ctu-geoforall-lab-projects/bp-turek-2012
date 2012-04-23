@@ -1,7 +1,9 @@
 #include "wms_import.h"
 
 #include <wx/textfile.h>
+#include <wx/filename.h>
 #include <wx/xml/xml.h>
+
 
 #include <gdal_priv.h>
 
@@ -24,10 +26,10 @@ wxString	CWMS_WMS_Gdal_drv::_Download(void)
 	wxString gdalDrvFormat = wxT("GTiff");//TODO Gtif linkovaci problem
 
 	GDALDriver * pGeoTiffDriver;
-	pGeoTiffDriver = GetGDALDriverManager()->GetDriverByName( gdalDrvFormat.mb_str());
+	pGeoTiffDriver = GetGDALDriverManager()->GetDriverByName(gdalDrvFormat.mb_str());
 	if(!pGeoTiffDriver)
 	{
-		throw WMS_Exception(wxT("Unable to find driver:") +  gdalDrvFormat);
+		throw WMS_Exception(wxT("Unable to find driver:") + gdalDrvFormat);
 	}
 
 	pGdalWmsDataset = (GDALDataset *) GDALOpen( xmlPath.mb_str(), GA_ReadOnly );
@@ -36,18 +38,18 @@ wxString	CWMS_WMS_Gdal_drv::_Download(void)
 		throw WMS_Exception(wxT("Unable to create dataset"));
 	}
 
-	wxString tempMapPath = m_TempDir +wxT("/") + wxT("SAGAWmsTempMap.tiff");//TODO osetrit, smazat....
+	wxString tempMapPath = wxFileName::CreateTempFileName(wxT("SAGAWmsTempMap"));
 
 
 	char ** driverMetadata = pGeoTiffDriver->GetMetadata();
 
 	if( !CSLFetchBoolean(driverMetadata, GDAL_DCAP_CREATECOPY, FALSE))
 	{
-		throw WMS_Exception(wxT("Driver") +  gdalDrvFormat + wxT( "supports CreateCopy() method.") );
+		throw WMS_Exception(wxT("Driver") + gdalDrvFormat + wxT("supports CreateCopy() method.") );
 	}
 
 
-	GDALDataset  * pGeoTiffWmsDataset = pGeoTiffDriver->CreateCopy( tempMapPath.mb_str()  , pGdalWmsDataset, FALSE,  NULL, NULL, NULL );
+	GDALDataset  * pGeoTiffWmsDataset = pGeoTiffDriver->CreateCopy( tempMapPath.mb_str(), pGdalWmsDataset, FALSE,  NULL, NULL, NULL );
 	if(!pGdalWmsDataset)
 	{
 		throw WMS_Exception(wxT("Unable to create create wms driver"));
@@ -56,6 +58,7 @@ wxString	CWMS_WMS_Gdal_drv::_Download(void)
 
 	GDALClose( (GDALDataset *) pGdalWmsDataset );
 	GDALClose( (GDALDataset *) pGeoTiffWmsDataset);
+	wxRemoveFile(xmlPath);
 
 	return tempMapPath;
 
@@ -78,11 +81,8 @@ wxString     CWMS_WMS_Gdal_drv::_CreateGdalDrvXml		( void )
 	wxXmlNode * ndVersion = new wxXmlNode(ndService,   wxXML_ELEMENT_NODE, wxT("Version"),wxT("Service"));
 	wxXmlNode * ndVersionContent = new wxXmlNode(ndVersion, wxXML_TEXT_NODE, wxT("VersionContent"),  m_Capabilities.m_Version.c_str());
 
-	modul->Message_Add(m_ServerUrl.c_str());
 	wxXmlNode * ndServerURL =new wxXmlNode(ndService,   wxXML_ELEMENT_NODE, wxT("ServerUrl"));
 	wxXmlNode * ndServerURLContent = new wxXmlNode(ndServerURL, wxXML_TEXT_NODE, wxT("ServerUrlContent"),  m_ServerUrl.c_str());
-
-	modul->Message_Add(m_Format.c_str());
 
 	wxXmlNode * ndImageFormat  = new wxXmlNode(ndService, wxXML_ELEMENT_NODE, wxT("ImageFormat"));
 	wxXmlNode * ndImageFormatContent = new wxXmlNode(ndImageFormat, wxXML_TEXT_NODE, wxT("ImageFormatContent"), m_Format.c_str());
@@ -130,7 +130,7 @@ wxString     CWMS_WMS_Gdal_drv::_CreateGdalDrvXml		( void )
 	wxXmlNode * ndBlockSizeY = new wxXmlNode(ndGdalWMS, wxXML_ELEMENT_NODE, wxT("BlockSizeY") );
 	wxXmlNode * ndBlockSizeYContent = new wxXmlNode(ndBlockSizeY, wxXML_TEXT_NODE, wxT("BlockSizeYContent"), wxString::Format(wxT("%d"), m_blockSizeY).c_str());
 
-	wxString gdalXmlPath =  m_TempDir + wxT("/SAGAgdal.xml");
+	wxString gdalXmlPath = wxFileName::CreateTempFileName(wxT("SAGAgdal"));
 	wxTextFile xmlFile;
 	xmlFile.Create(gdalXmlPath);
 

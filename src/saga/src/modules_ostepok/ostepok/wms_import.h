@@ -186,20 +186,17 @@ public:
 
 	virtual ~CWMS_WMS_Base(void);
 
-	//bool Create( ); reset; TODO friend cappp then hide createcap????
-
-	//bool Create(class wxHTTP *pServer, const wxString &Directory, wxString &Version);
 	CWMS_Capabilities			m_Capabilities;
 
 	bool					m_bReProj, m_bReProjBbox, m_bTransparent;
 
-	int					m_sizeX, m_sizeY, m_blockSizeX, m_blockSizeY, m_ReProjMethod;// nastavit uvnitr tridy??
+	int					m_sizeX, m_sizeY, m_blockSizeX, m_blockSizeY, m_ReProjMethod;
 
 	wxString				m_Proj, m_Format, m_Layers, m_Styles, m_ServerUrl, m_ReProj, m_TempDir;
 
 	TSG_Rect				m_BBox, wmsReqBBox;
 
-	CWMS_Import *				modul;//TODO realy needed????
+	CWMS_Import *				modul;//TODO realy needed????, nejlepsi asi dat do CWMS Import
 
 	CSG_Parameter *				m_pOutputMap;
 
@@ -216,8 +213,6 @@ protected:
 	wxString				_CreateGdalDrvXml	(void);
 
 	 wxString				_GdalWarp		(  wxString & tempMapPath );
-
-	//virtual bool getMap( void );
 
 };
 
@@ -250,7 +245,7 @@ public:
 
 	wxString				m_Name, m_Title, m_Abstract, m_Version;
 
-	std::vector<wxString>				m_Dimensions, m_KeywordList;
+	std::vector<wxString>			m_Dimensions, m_KeywordList;
 
 	int					m_MaxScaleD, m_MinScaleD, m_id, m_Cascaded, m_fixedWidth, m_fixedHeight;
 
@@ -295,7 +290,7 @@ class CWMS_Projection
 {
 public:
 
-    CWMS_Projection(void)		{m_Projection.Clear(); m_GeoBBox;}
+	CWMS_Projection(void)		{m_Projection.Clear(); m_GeoBBox;}
 
 	virtual ~CWMS_Projection(void)	{}
 
@@ -334,23 +329,8 @@ public:
 
 	static bool				_Get_Child_PropVal	(class wxXmlNode *pNode, wxString &Value, const wxString &Name, const wxString &Property);
 
-	static std::vector<wxString>			_Get_Children_Content	(class wxXmlNode *pNode, const wxString &children_name);
+	static std::vector<wxString>		_Get_Children_Content	(class wxXmlNode *pNode, const wxString &children_name);
 };
 
-///////////////////////////////////////////////////////////
-//														 //
-//														 //
-//														 //
-///////////////////////////////////////////////////////////
 
-//---------------------------------------------------------
-
-
-///////////////////////////////////////////////////////////
-//														 //
-//														 //
-//														 //
-///////////////////////////////////////////////////////////
-
-//---------------------------------------------------------
 #endif // #ifndef HEADER_INCLUDED__WMS_Import_H

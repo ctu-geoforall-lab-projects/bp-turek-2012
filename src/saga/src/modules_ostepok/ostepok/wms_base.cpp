@@ -4,6 +4,7 @@
 
 #include <wx/image.h>
 #include <wx/stdpaths.h>
+#include <wx/filename.h>
 
 #include <gdalwarper.h>
 #include "ogr_spatialref.h"
@@ -100,43 +101,45 @@ TSG_Rect        CWMS_WMS_Base::_ComputeBbox	(void)
 
 void	CWMS_WMS_Base::_CreateOutputMap(wxString & tempMapPath)
 {
-	if(m_bReProj)  tempMapPath =  _GdalWarp		(tempMapPath);
+	    if(m_bReProj)  tempMapPath =  _GdalWarp		(tempMapPath);
 
-	wxImage	Image;
-	if( Image.LoadFile(tempMapPath) == false )
-	{
-		throw WMS_Exception(wxT("Unable read image from:") + tempMapPath);
+	    wxImage	Image;
+	    if( Image.LoadFile(tempMapPath) == false )
+	    {
+		    throw WMS_Exception(wxT("Unable read image from:") + tempMapPath);
 
+	    }
+	    else
+	    {
+		    CSG_Grid	*pGrid	= SG_Create_Grid(SG_DATATYPE_Int, Image.GetWidth(), Image.GetHeight(), 1, m_BBox.xMin, m_BBox.yMin);
+
+		    for(int y=0, yy=pGrid->Get_NY()-1; y<pGrid->Get_NY(); y++, yy--)
+		    {
+			    for(int x=0; x<pGrid->Get_NX(); x++)
+			    {
+				    pGrid->Set_Value(x, y, SG_GET_RGB(Image.GetRed(x, yy), Image.GetGreen(x, yy), Image.GetBlue(x, yy)));
+
+				    if (!Image.GetAlpha(x, yy))
+				    {
+					pGrid->Set_NoData(x, y );
+				    }
+			    }
+		    }
+
+		    pGrid->Set_Name(m_Capabilities.m_Title);//TODO layer name
+		    m_pOutputMap->Set_Value(pGrid);
+		    modul->DataObject_Set_Colors(pGrid, 100, SG_COLORS_BLACK_WHITE);
+
+		    CSG_Parameters Parameters;
+
+		    if( modul->DataObject_Get_Parameters(pGrid, Parameters) && Parameters("COLORS_TYPE") )//TODO
+		    {
+			    Parameters("COLORS_TYPE")->Set_Value(3);	// Color Classification Type: RGB
+			    modul->DataObject_Set_Parameters(pGrid, Parameters);
+		    }
 	}
-	else
-	{
-		CSG_Grid	*pGrid	= SG_Create_Grid(SG_DATATYPE_Int, Image.GetWidth(), Image.GetHeight(), 1, m_BBox.xMin, m_BBox.yMin);
+	wxRemoveFile(tempMapPath);
 
-		for(int y=0, yy=pGrid->Get_NY()-1; y<pGrid->Get_NY(); y++, yy--)
-		{
-			for(int x=0; x<pGrid->Get_NX(); x++)
-			{
-				pGrid->Set_Value(x, y, SG_GET_RGB(Image.GetRed(x, yy), Image.GetGreen(x, yy), Image.GetBlue(x, yy)));
-
-				if (!Image.GetAlpha(x, yy))
-				{
-				    pGrid->Set_NoData(x, y );
-				}
-			}
-		}
-
-		pGrid->Set_Name(m_Capabilities.m_Title);//TODO layer name
-		m_pOutputMap->Set_Value(pGrid);
-		modul->DataObject_Set_Colors(pGrid, 100, SG_COLORS_BLACK_WHITE);
-
-		CSG_Parameters Parameters;
-
-		if( modul->DataObject_Get_Parameters(pGrid, Parameters) && Parameters("COLORS_TYPE") )//TODO
-		{
-			Parameters("COLORS_TYPE")->Set_Value(3);	// Color Classification Type: RGB
-			modul->DataObject_Set_Parameters(pGrid, Parameters);
-		}
-    }
 
 
 }
@@ -216,7 +219,7 @@ wxString	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )
 	GDALDestroyGenImgProjTransformer( hTransformArg );
 
 	// Create the output file.
-	wxString warpedTempMapPath = m_TempDir +wxT("/") + wxT("SAGAWmsWarpedTempMap.tiff");
+	wxString warpedTempMapPath =  wxFileName::CreateTempFileName(wxT("SAGAWmsWarpedTempMap"));
 	warpedTemMapDataset = GDALCreate( GdalF,  warpedTempMapPath.mb_str(), nPixels, nLines,
 			     GDALGetRasterCount(tempMapDataset), tempMapDataType, NULL );
 
@@ -272,5 +275,8 @@ wxString	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )
 
 	GDALClose( warpedTemMapDataset );
 	GDALClose( tempMapDataset );
+
+	wxRemoveFile(tempMapPath);
+
 	return warpedTempMapPath;
 }
