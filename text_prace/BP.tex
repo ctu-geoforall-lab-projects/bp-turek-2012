@@ -282,7 +282,7 @@ Toto učiní přidáním parametrů k URL adrese WMS serveru:
 \end{itemize}
 
 Aby byl server schopen správně zpracovat WMS dotazy, musí se klient a server dohodnout na verzi WMS, ve které bude probíhat následná komunikace.
-Toto je součástí dotazu typu GetCapabilities. Pokud není v dotazu GetCapabilites parametr VERSION, server odpoví ve formátu nejvyšší podporované verze. 
+Toto je součástí dotazu typu GetCapabilities. Pokud není v dotazu GetCapabilities parametr VERSION, server odpoví ve formátu nejvyšší podporované verze. 
 Pokud klient požaduje explicitně určitou verzi, server odpoví v dané verzi, pokud ji podporuje. Jak bylo výše zmíněno, dnes naprostá většina serverů podporuje 
 verze 1.1.1 a 1.3.0. Pokud klient podporuje tyto dvě verze, problém s nekompatibilitou v podstatě odpadá.
 
@@ -503,10 +503,15 @@ Pokud je serveru položen dotaz ve špatném tvaru, vrátí vyjímku implicitně
 
 \section{WMS modul pro GRASS}
 
+Jelikož původně GRASS neměl žádné GUI, jeho moduly jsou přispůsobeny pro práci v příkazové řádce. Každý modul si lze představit jako funkci, která má definované vstupní argumenty a určený výstup. Nevýhodou tohoto 
+přístupu je že modul není schopen s uživatelem komunikovat za běhu modulu, uživatel může jeho chování ovlivnit jen pomocí argumentů, které jsou zadány před spuštěním. Proto modul pro WMS v GRASS GIS vyhovuje pro implementaci
+WMS dotazu typu GetMap. Pomocí modulu nelze zobrazit nabídku parametrů pro dotaz GetMap, která se vygeneruje na základě informací z dotazu GetCapabilities. Toto je potřeba řešit implementací v GUI programů GRASS.
+
 
 
 \subsection{Analýza původního stavu}
- 
+
+ V GRASS GIS již existuje modul r.in.wms, který umožňuje získání dat z WMS serveru. Tento modul byl původně napsán jako shell skript. V GRASS 7 byly všechny shell skript moduly přepsány do jazyka Python.      
 
 \end{document}
 

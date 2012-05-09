@@ -25,6 +25,8 @@ import wx.lib.mixins.listctrl as listmix
 from core.gcmd     import RunCommand
 from core.settings import UserSettings
 
+import grass.script as grass
+
 class WMSDialog(wx.Dialog):
     def __init__(self, parent, service = 'wms',
                  id=wx.ID_ANY,
@@ -64,6 +66,10 @@ class WMSDialog(wx.Dialog):
 
         self.list = LayersList(self.panel)
         self.list.LoadData()
+
+        self.infoPanel  = wx.TextCtrl(parent = self.panel, id = wx.ID_ANY, style = wx.TE_MULTILINE)
+
+        self.Bind(wx.EVT_TREE_ITEM_ACTIVATED, self.OnTreeItemClicked, self.list)
 
         self.add = wx.CheckBox(parent=self.panel, id=wx.ID_ANY,
                                label=_("Add imported layers into layer tree"))
@@ -123,6 +129,9 @@ class WMSDialog(wx.Dialog):
 
         layersSizer.Add(item=self.list, proportion=1,
                         flag=wx.ALL | wx.EXPAND, border=5)
+
+        layersSizer.Add(self.infoPanel, proportion=2,
+                        flag=wx.ALL | wx.EXPAND, border=5)
         
         dialogSizer.Add(item=layersSizer, proportion=1,
                         flag=wx.LEFT | wx.RIGHT | wx.BOTTOM | wx.EXPAND, border=5)
@@ -175,13 +184,21 @@ class WMSDialog(wx.Dialog):
                          flags = 'c',
                          mapserver = server)
         
+        temp_file = grass.tempfile()
+        if temp_file is None:
+            grass.fatal(_("Unable to create temporary files"))##TOFO
+        
+        temp = open(temp_file, "w")
+        temp.write(ret.encode('utf-8'))#TODO
+        temp.close()
+
         if not ret:
             self.list.LoadData()
             self.btn_import.Enable(False)
             return # no layers found
       
         try:
-           self.cap = Capabilities(ret)
+           self.cap = Capabilities(temp_file)
         except CAPError as error:
            grass.fatal(error)##TODO
         
@@ -200,6 +217,32 @@ class WMSDialog(wx.Dialog):
             self.btn_connect.Enable(True)
         else:
             self.btn_connect.Enable(False)
+
+    def OnTreeItemClicked(self, event): 
+
+        data = [  ["Name", "Name", "text"],
+                  ["Title", "Title", "text"],
+                  ["Abstract", "Abstract", "text"],  
+                  ["queryable", "Queryable", "attribute"]  ]
+
+        infoText = ""
+        for dataItem in data:
+
+            layer = self.list.GetItemPyData(event.GetItem())
+            element =layer.xml_h.ns(dataItem[0])
+            elemText = ""
+
+            if dataItem[2] == "text":
+                if layer.layer_node.find(element) is not None:
+                    elemText = layer.layer_node.find(element).text 
+
+            elif dataItem[2] == "attribute":
+                if layer.layer_node.find(element) is not None:
+                    elemText = layer.layer_node.attrib[element];
+
+            infoText += dataItem[1] + ": " +  elemText + "\n \n"; 
+
+        self.infoPanel.SetValue(infoText)
         
     def GetLayers(self):
         """!Get list of selected layers/styles to be imported"""
@@ -208,6 +251,7 @@ class WMSDialog(wx.Dialog):
     def GetSettings(self):
         """!Get connection settings"""
         return { 'server' : self.server.GetValue() }
+
     
 class LayersList(TreeListCtrl, listmix.ListCtrlAutoWidthMixin):
     def __init__(self, parent, pos=wx.DefaultPosition):
@@ -240,10 +284,13 @@ class LayersList(TreeListCtrl, listmix.ListCtrlAutoWidthMixin):
         for id, layer in  layers.iteritems():
 
             prev_layer = layer
-            if layer.getTitle():
-                layer_name = layer.getTitle();
-            elif layer.getName():
-                layer_name = layer.getName();
+
+            title = layer.xml_h.ns("Title")
+            name = layer.xml_h.ns("Name")
+            if layer.layer_node.find(title) is not None:
+                layer_name = layer.layer_node.find(title).text;
+            elif layer.layer_node.find(name) is not None:
+                layer_name = layer.layer_node.find(name).text
             else:
                 layer_name = str(id);
 
@@ -254,16 +301,18 @@ class LayersList(TreeListCtrl, listmix.ListCtrlAutoWidthMixin):
                 continue
 
             else:
-                layer_item = self.AppendItem(parent_item, layer.getName())
+                layer_item = self.AppendItem(parent_item, layer_name)
+                self.SetPyData(layer_item, layer)
 
-            for style in layer.getStyles(): 
-                if style.getTitle():
-                    style_name = style.getTitle();
-                elif style.getName():
-                    style_name = style.getName();
+            style = layer.xml_h.ns("Style")
+            for style_node in layer.layer_node.findall(style): 
+                if style_node.find(title) is not None:
+                    style_name = style_node.find(title).text
+                elif style_node.find(name) is not None:
+                    style_name = style_node.find(name).text
                 else:
-                    style_name = str(id);
-                self.AppendItem(layer_item, style_name)
+                    style_name = ""
+                self.AppendItem(layer_item, style_name) 
 
             if id == 0:
                 continue
@@ -313,3 +362,6 @@ class LayersList(TreeListCtrl, listmix.ListCtrlAutoWidthMixin):
                 layers[layer].append(self.GetItemText(item, 0))
         
         return layers
+
+
+

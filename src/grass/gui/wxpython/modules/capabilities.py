@@ -1,70 +1,56 @@
 #!/usr/bin/env python
-"""
-MODULE:    r.in.wms2
-
-AUTHOR(S): Stepan Turek <stepan.turek AT seznam.cz>
-
-PURPOSE:   Downloads and imports data from WMS server.
-
-COPYRIGHT: (C) 2012 Stepan Turek, and by the GRASS Development Team
-
-This program is free software under the GNU General Public License
-(>=v2). Read the file COPYING that comes with GRASS for details.
-"""
 import sys
-
 import grass.script as grass
-import xml.dom.minidom as xml
-
-import codecs
+import xml.etree.ElementTree as etree 
 
 class Capabilities:
-    def __init__(self, cap_string):
-        cap_string = cap_string.encode('utf-8')
-        self.xml_h = XMLHandlers();##TODO parse inside cap_string
-        self.xml_cap = xml.parseString(cap_string)
-        #self.xml_cap = xml.parse("/home/ostepok/Desktop/xml.xml")
-        root_node = self.xml_cap.documentElement
-        #self._cleanTree(root_node)
-        self.wms_version = self.xml_h.getAttr(root_node, "version")##TODO upper case...
+
+    def __init__(self, cap_file):
+
+        tree = etree.parse(cap_file)
+        root_node = tree.getroot()
+
+        self.xml_h = XMLHandlers(root_node) 
+       
+        if not "version" in root_node.attrib:
+            raise CAPError("Missing version attribute root node in Capabilities XML file")
+        else:
+            self.wms_version = root_node.attrib["version"]
 
         if self.wms_version == "1.3.0":
             self.proj_tag = "CRS"
         else:
             self.proj_tag = "SRS" 
 
-        error_suffix = "in GetCapabilities response";
+        cap_node = root_node.find(self.xml_h.ns("Capability"))
+        if cap_node is None:
+            raise CAPError("Missing <Capability> tag in Capabilities XML file") 
 
-        service_node = self.xml_h.childMustExist(root_node ,"Service", error_suffix)
-        cap_node = self.xml_h.childMustExist(root_node , "Capability", error_suffix)
-        root_layer_node = self.xml_h.childMustExist(cap_node ,"Layer", error_suffix)
-
-
+        root_layer_node = cap_node.find(self.xml_h.ns("Layer"))
+        if root_layer_node is None:
+            raise CAPError("Missing <Layer> tag in Capabilities XML file")  
+          
         self.layers_by_id = {}
         self._initializeLayerTree(root_layer_node)
+
         
     def _initializeLayerTree(self, parent_layer, id = 0):
 
         if id == 0:
-            parent_layer = self._initializeLayer(parent_layer, id)
+            parent_layer = Layer(parent_layer, None, id, self.xml_h, self.proj_tag)
+            self.layers_by_id[id] = parent_layer;
             id += 1
 
-        layer_nodes =  self.xml_h.getChildren(parent_layer._layer_node, "Layer")
+        layer_nodes = parent_layer.layer_node.findall((self.xml_h.ns("Layer")))
 
         for layer_node in layer_nodes:    
-            layer = self._initializeLayer(layer_node, id, parent_layer)
+            layer = Layer(layer_node, parent_layer, id, self.xml_h, self.proj_tag)
+            self.layers_by_id[id] = layer;
             id += 1
             id = self._initializeLayerTree(layer, id)
             parent_layer.child_layers.append(layer)
 
         return id;
-        
-    def _initializeLayer(self, layer_node, id, parent_layer = None):
-
-        layer = Layer(layer_node, parent_layer, id, self.xml_h, self.proj_tag)
-        self.layers_by_id[id] = layer;
-
-        return layer
        
 
 class Layer:
@@ -74,48 +60,53 @@ class Layer:
         self.id = id       
         self.xml_h = xml_h
         self.proj_tag = proj_tag
-        self._layer_node = layer_node
+        self.layer_node = layer_node
         self.parent_layer = parent_layer
         self.child_layers = []
 
-        self._inherited_elements = {}
-        self._inherited_elements["style_nodes"] = [] 
-        self._inherited_elements["bbox_nodes"] = []
-        self._inherited_elements["proj_nodes"] = [] 
+        if parent_layer is not None:
 
-        self.inheritElement(parent_layer, "proj_nodes", proj_tag, "element_content")
-        self.inheritElement(parent_layer, "bbox_nodes", "BoundingBox", "attribute", self.proj_tag)
-        self.inheritElement(parent_layer, "style_nodes", "Style", "child_element_content", "Name")
-     
-        #grass.message("Layer:" + str(id))
-        #grass.message(len(self._inherited_elements["proj_nodes"]))
-        #grass.message(len(self._inherited_elements["bbox_nodes"]))
-        #grass.message(len(self._inherited_elements["style_nodes"]))
+            replaced_elements = [ ["EX_GeographicBoundingBox", "replace"], ["Attribution", "replace"], ["MinScaleDenominator", "replace"], 
+                                  ["MaxScaleDenominator", "replace"], ["AuthorityURL", "add"]]
 
-    def inheritElement(self, parent_layer, inherited_element, element_name, cmp_type, add_arg = None):#TODO inheritElements??? 
+            for element in replaced_elements:
+                nodes = self.layer_node.findall(self.xml_h.ns(element[0]))
+
+                if len(nodes) != 0 or element[1] == "add":
+                    for node in parent_layer.layer_node.findall(self.xml_h.ns(element[0])):
+                        self.layer_node.append(node)
+ 
+            inh_arguments = ["queryable", "cascaded", "opaque", "noSubsets", "fixedWidth", "fixedHeight"]
+
+            for attr in parent_layer.layer_node.attrib:
+                if attr not in self.layer_node.attrib and attr in inh_arguments:
+                    self.layer_node.attrib[attr] = parent_layer.layer_node.attrib[attr]
+
+            self.inhNotSameElement(self.proj_tag, "element_content")
+            self.inhNotSameElement("BoundingBox", "attribute", self.proj_tag)
+            self.inhNotSameElement("Style", "child_element_content", "Name")
+            self.inhNotSameElement("Dimension", "attribute", "name")
+
+    def inhNotSameElement(self, element_name, cmp_type, add_arg = None):
         
-        nodes = self.xml_h.getChildren(self._layer_node, element_name)    
-        self._inherited_elements[inherited_element] = nodes
+        nodes = self.layer_node.findall(self.xml_h.ns(element_name))    
 
         parent_nodes = []
-        if parent_layer is not None:
-            parent_nodes = parent_layer._inherited_elements[inherited_element]
+        if self.parent_layer is not None:
+            parent_nodes = self.parent_layer.layer_node.findall(self.xml_h.ns(element_name))
 
         for parent_node in parent_nodes:
 
             parent_cmp_text = ""
             if cmp_type == "attribute":
-                parent_cmp_text = self.xml_h.getAttr(parent_node, add_arg)
- 
+                if add_arg in parent_node.attrib:
+                    parent_cmp_text = parent_node.attrib[add_arg];
+
             elif cmp_type == "element_content":
-                parent_cmp_text = self.xml_h.getNodeContent(parent_node)
+                parent_cmp_text = parent_node.text
 
             elif cmp_type == "child_element_content":
-                parent_cmp_node = self.xml_h.getChild(parent_node, add_arg)
-                if parent_cmp_node:
-                    parent_cmp_text = self.xml_h.getNodeContent(parent_cmp_node)
-                else:
-                    continue;
+                parent_cmp_text = parent_node.find(self.xml_h.ns(add_arg)).text
 
             if parent_cmp_text == "":
                 continue
@@ -125,140 +116,44 @@ class Layer:
 
                 cmp_text = None
                 if cmp_type == "attribute":
-                    cmp_text = self.xml_h.getAttr(node, add_arg)
+                    if add_arg in node.attrib:
+                        cmp_text = node.attrib[add_arg];
 
                 elif cmp_type == "element_content":
-                    cmp_text = self.xml_h.getNodeContent(node)
+                         cmp_text = node.text
 
                 elif cmp_type == "child_element_content":
-                    cmp_node = self.xml_h.getChild(node, add_arg)
-                    if parent_node:
-                        cmp_text = self.xml_h.getNodeContent(cmp_node)
-                    else: 
-                        continue
+                    cmp_text = node.find(self.xml_h.ns(add_arg)).text
 
                 if cmp_text.lower() == parent_cmp_text.lower():
                     is_there = True
                     break
            
             if  not is_there:
-                self._inherited_elements[inherited_element].append(parent_node)
+                self.layer_node.append(parent_node)
 
-    def getName(self):
-        return self.xml_h.getChildContent(self._layer_node, "Name")
-        
-    def getTitle(self):
-        return self.xml_h.getChildContent(self._layer_node, "Title") 
+class XMLHandlers():
 
-    def getStyles(self):
+    def __init__(self, root_node):
+        self.namespace = "{http://www.opengis.net/wms}"
 
-        style_nodes = self.xml_h.getChildren(self._layer_node, "Style")
-        styles = []
+        if root_node.find("Service") is not None:
+            self.use_ns = False
 
-        for style_node in style_nodes:
-            styles.append(Style(style_node, self.xml_h))
-
-        return styles
-
-    #def getProj(self, proj):##TODO
-    #    proj_node = self.xml_h.getChild(self._layer_node, self.proj_tag + ":" + proj);        
-    #    return self.xml_h.getNodeContent(proj_node);
-
-class Style:##BASE CLASS
-
-    def __init__(self, style_node, xml_h):
-        self.xml_h = xml_h;
-        self._style_node = style_node;
-
-    def getName(self):
-        return self.xml_h.getChildContent(self._style_node, "Name") 
-        
-    def getTitle(self):
-        return self.xml_h.getChildContent(self._style_node, "Title") 
-        
-class XMLHandlers:
-
-    def getChildren(self, parent_node, name):
-
-        nodes = parent_node.childNodes
-        found_nodes = []
-        if parent_node is not None:
-
-            for node in nodes:
-
-                if not node.localName:
-                    continue;
-
-	        if node.localName.lower() == name.lower() and node.nodeType == xml.Node.ELEMENT_NODE:
-                     found_nodes.append(node)
-         
-        return  found_nodes;
-
-    def getChild(self, parent_node, name):
-
-        nodes = parent_node.childNodes
-        if parent_node is not None:
-
-            for node in nodes:
-
-                if not node.localName:
-                    continue;
-
-	        if node.localName.lower() == name.lower() and node.nodeType == xml.Node.ELEMENT_NODE:
-                    return node; 
-         
-        return  None;
-
-    def getChildContent(self, parent_node, name):
-
-        name_node = self.getChild(parent_node, name)
-        if name_node:
-            return self.getNodeContent(name_node)
-        else:
-            return None
-
-    def getAttr(self, node, name):
-
-        if node.hasAttribute(name):
-            return node.getAttribute(name)   
-        
-        return  None;
-
-    def getChildByAttr(self, node, attrName):
-
-        nodes = getChildren(self, node, name)
- 
-        for node in nodes:
-
-            if node.hasAttribute(name):
-                return node  
- 
-        return  None;
-
-
-    def getNodeContent(self, parrent_node):
-        text_list = []
-        nodelist = parrent_node.childNodes
-
-        for node in nodelist:
-
-            if node.nodeType == xml.Node.TEXT_NODE:
-                text_list.append(node.wholeText)
-  
-        if len(text_list) > 0:
-            return ' '.join(text_list)
+        if root_node.find(self.namespace + "Service") is not None:
+            self.use_ns = True
 
         else:
-            return ""
+           raise CAPError("Missing <Service> tag in Capability XML file")
 
-    def childMustExist(self, parent_node, tag_name, error_suffix):
+    def ns(self, tag_name):
 
-       cap_node = self.getChildren(parent_node, tag_name)
+        if self.use_ns:
+            tag_name = self.namespace + tag_name
 
-       if len(cap_node) == 0:##TODO only one
-           raise CAPError("Missing <" + tag_name + "> tag in" + error_suffix)
-       return cap_node[0]
-
+        return tag_name
+       
+       
 class CAPError(Exception):
 
       def __init__(self, msg):
