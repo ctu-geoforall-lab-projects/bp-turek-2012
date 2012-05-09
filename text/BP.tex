@@ -433,7 +433,7 @@ Všechny tyto parametry byly zvoleny na základě informací, které jsme získa
 
 Na základě tohoto dotazu obdržíme jako odpověď rastr ve formátu PNG s přehledovou mapou České republiky:
 
- \includegraphics[scale=0.5]{GetMapResponse.png}
+ \includegraphics[scale=0.5]{figures/GetMapResponse}
 
 
 Poslední typ dotazu je volitelný a nazývá se GetFeatureInfo. Ten dotaz, narozdíl od předchozích, nemusí server podporovat.
@@ -487,13 +487,13 @@ Jak lze vidět, tento dotaz zarnuje dotaz GetMap a další parametry:
 
   
 \begin{figure}[h!]
- \includegraphics[scale=0.3]{getfeatureinfo.png}
+ \includegraphics[scale=0.3]{figures/getfeatureinfo}
   \caption{Výsledek GetMap dotazu s bodem o souřadnicích I, J  695 a 720:}
 \end{figure}
 
 A jako odpověd obdržíme html dokunent, který se v prohlížeči zobrazí takto:
 
- \includegraphics[scale=0.7]{getfeatureinforeply.png}
+ \includegraphics[scale=0.7]{figures/getfeatureinforeply}
 
 
 Pokud je serveru položen dotaz ve špatném tvaru, vrátí vyjímku implicitně ve formátu XML souboru, v němž je blíže specifikována chyba ve WMS dotazu. 
