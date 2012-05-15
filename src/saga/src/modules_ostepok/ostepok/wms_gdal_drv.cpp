@@ -111,7 +111,7 @@ wxString     CWMS_Gdal_drv::_CreateGdalDrvXml		( void )
 	wxXmlNode * ndSizeY = new wxXmlNode(ndDataWindow, wxXML_ELEMENT_NODE, wxT("SizeY") );
 	wxXmlNode * ndSizeYContent = new wxXmlNode(ndSizeY, wxXML_TEXT_NODE, wxT("SizeXContent"), wxString::Format(wxT("%d"), m_sizeY).c_str());
 
-	// 4 - RGB + A (transparent layer)
+	// 4 - RGB + A (transparency layer)
 	wxXmlNode * ndBandsCount = new wxXmlNode(ndGdalWMS,   wxXML_ELEMENT_NODE, wxT("BandsCount") );
 	wxXmlNode * ndBandsCountContent = new wxXmlNode(ndBandsCount, wxXML_TEXT_NODE, wxT("ndBandsCountContent"), wxString::Format(wxT("%d"), 4).c_str());
 
@@ -128,7 +128,7 @@ wxString     CWMS_Gdal_drv::_CreateGdalDrvXml		( void )
 	gdalXML.Save(gdalXmlPath);
 
 	gdalXML.DetachRoot ();
-	delete ndGdalWMS;
+	delete ndGdalWMS;//Removes whole tree
 
 	xmlFile.Open(gdalXmlPath);
 

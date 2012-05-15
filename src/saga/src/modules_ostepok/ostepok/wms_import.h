@@ -265,7 +265,8 @@ public:
 
 	CWMS_Capabilities			m_Capabilities;/*!< holds value of WMS version*/
 
-	//Values for GetMap Request
+	//Values for GetMap Request,  TODO violated principle of encapsulation, better to make these variables protected memebers
+	// and initialize them from passed dictionary as Get_Map argument of chosen values
 	TSG_Rect				m_BBox, wmsReqBBox;
 
 	bool					m_bReProj, m_bReProjBbox, m_bTransparent;
