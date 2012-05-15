@@ -11,14 +11,15 @@ endif
 DEP_LIBS = `gdal-config --libs`
 DEF_SAGA           = -D_SAGA_LINUX -D_TYPEDEF_BYTE -D_TYPEDEF_WORD
 CXX_INCS           = -I$(top_srcdir)/src/saga_core `gdal-config --cflags`
-AM_CXXFLAGS        = -fPIC $(CXX_INCS) $(DEF_SAGA) $(DEP_DEFS) $(DBGFLAGS)
-AM_LDFLAGS         = -fPIC -shared -avoid-version $(DEP_LIBS)
+AM_CXXFLAGS        = $(CXX_INCS) $(DEF_SAGA) $(DEP_DEFS) $(DBGFLAGS)
+AM_LDFLAGS         = $(DEP_LFLG) -avoid-version  $(DEP_LIBS) -avoid-version
 pkglib_LTLIBRARIES = lib_webservices.la
 lib_webservices_la_SOURCES =\
 MLB_Interface.cpp\
 wms_import.cpp\
 wms_capabilities.cpp\
 wms_base.cpp\
+wms_xml_handlers.cpp\
 wms_gdal_drv.cpp\
 wms_layer.cpp\
 MLB_Interface.h\

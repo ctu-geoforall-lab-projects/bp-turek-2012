@@ -2,16 +2,12 @@
 
 #include <wx/textfile.h>
 #include <wx/filename.h>
-#include <wx/xml/xml.h>
-
 
 #include <gdal_priv.h>
 
 
-
-wxString	CWMS_WMS_Gdal_drv::_Download(void)
+wxString	CWMS_Gdal_drv::_Download(void)
 {
-
 	wxString xmlPath = _CreateGdalDrvXml();
 
 	GDALDataset  * pGdalWmsDataset;
@@ -20,22 +16,16 @@ wxString	CWMS_WMS_Gdal_drv::_Download(void)
 	pGdalWmsDataset = (GDALDataset *) GDALOpen( xmlPath.mb_str(), GA_ReadOnly );
 	if(!pGdalWmsDataset)
 	{
-		throw WMS_Exception(wxT("Unable to create dataset"));
+		throw CWMS_Exception(wxT("Unable to create dataset"));
 	}
 
-	wxString gdalDrvFormat = wxT("GTiff");//TODO Gtif linkovaci problem
+	wxString gdalDrvFormat = wxT("GTiff");
 
 	GDALDriver * pGeoTiffDriver;
 	pGeoTiffDriver = GetGDALDriverManager()->GetDriverByName(gdalDrvFormat.mb_str());
 	if(!pGeoTiffDriver)
 	{
-		throw WMS_Exception(wxT("Unable to find driver:") + gdalDrvFormat);
-	}
-
-	pGdalWmsDataset = (GDALDataset *) GDALOpen( xmlPath.mb_str(), GA_ReadOnly );
-	if(!pGdalWmsDataset)
-	{
-		throw WMS_Exception(wxT("Unable to create dataset"));
+		throw CWMS_Exception(wxT("Unable to find driver:") + gdalDrvFormat);
 	}
 
 	wxString tempMapPath = wxFileName::CreateTempFileName(wxT("SAGAWmsTempMap"));
@@ -45,14 +35,14 @@ wxString	CWMS_WMS_Gdal_drv::_Download(void)
 
 	if( !CSLFetchBoolean(driverMetadata, GDAL_DCAP_CREATECOPY, FALSE))
 	{
-		throw WMS_Exception(wxT("Driver") + gdalDrvFormat + wxT("supports CreateCopy() method.") );
+		throw CWMS_Exception(wxT("Driver") + gdalDrvFormat + wxT("supports CreateCopy() method.") );
 	}
 
-
 	GDALDataset  * pGeoTiffWmsDataset = pGeoTiffDriver->CreateCopy( tempMapPath.mb_str(), pGdalWmsDataset, FALSE,  NULL, NULL, NULL );
+
 	if(!pGdalWmsDataset)
 	{
-		throw WMS_Exception(wxT("Unable to create create wms driver"));
+		throw CWMS_Exception(wxT("Unable to create create wms driver"));
 	}
 
 
@@ -65,7 +55,7 @@ wxString	CWMS_WMS_Gdal_drv::_Download(void)
 
 }
 
-wxString     CWMS_WMS_Gdal_drv::_CreateGdalDrvXml		( void )
+wxString     CWMS_Gdal_drv::_CreateGdalDrvXml		( void )
 {
 
 	wxXmlDocument gdalXML;
@@ -74,7 +64,7 @@ wxString     CWMS_WMS_Gdal_drv::_CreateGdalDrvXml		( void )
 
 	gdalXML.SetRoot (ndGdalWMS);
 
-	wxXmlNode * ndService = new wxXmlNode(ndGdalWMS, wxXML_ELEMENT_NODE, wxT("Service") );//TODO proc to padalo bez new
+	wxXmlNode * ndService = new wxXmlNode(ndGdalWMS, wxXML_ELEMENT_NODE, wxT("Service") );
 
 	ndService->AddAttribute(wxT("name"), wxT("WMS"));
 
@@ -121,8 +111,9 @@ wxString     CWMS_WMS_Gdal_drv::_CreateGdalDrvXml		( void )
 	wxXmlNode * ndSizeY = new wxXmlNode(ndDataWindow, wxXML_ELEMENT_NODE, wxT("SizeY") );
 	wxXmlNode * ndSizeYContent = new wxXmlNode(ndSizeY, wxXML_TEXT_NODE, wxT("SizeXContent"), wxString::Format(wxT("%d"), m_sizeY).c_str());
 
+	// 4 - RGB + A (transparent layer)
 	wxXmlNode * ndBandsCount = new wxXmlNode(ndGdalWMS,   wxXML_ELEMENT_NODE, wxT("BandsCount") );
-	wxXmlNode * ndBandsCountContent = new wxXmlNode(ndBandsCount, wxXML_TEXT_NODE, wxT("ndBandsCountContent"), wxString::Format(wxT("%d"), 4).c_str());//TODO Block size
+	wxXmlNode * ndBandsCountContent = new wxXmlNode(ndBandsCount, wxXML_TEXT_NODE, wxT("ndBandsCountContent"), wxString::Format(wxT("%d"), 4).c_str());
 
 	wxXmlNode * ndBlockSizeX = new wxXmlNode(ndGdalWMS, wxXML_ELEMENT_NODE, wxT("BlockSizeX") );
 	wxXmlNode * ndBlockSizeXContent = new wxXmlNode(ndBlockSizeX, wxXML_TEXT_NODE, wxT("BlockSizeXContent"), wxString::Format(wxT("%d"), m_blockSizeX).c_str());
@@ -142,9 +133,9 @@ wxString     CWMS_WMS_Gdal_drv::_CreateGdalDrvXml		( void )
 	xmlFile.Open(gdalXmlPath);
 
 	if(xmlFile.GetLineCount() > 1)	xmlFile.RemoveLine ((size_t) 0);
-	else				throw WMS_Exception(wxT("Corrupted XML file for GDAL Driver"));
+	else				throw CWMS_Exception(wxT("Corrupted XML file for GDAL Driver"));
 
-	xmlFile.Write();//todo wxInvalidOffset
+	xmlFile.Write();//TODO wxInvalidOffset
 
 	return gdalXmlPath;
 }

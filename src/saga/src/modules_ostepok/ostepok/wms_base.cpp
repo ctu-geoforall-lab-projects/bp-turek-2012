@@ -1,163 +1,111 @@
 #include "wms_import.h"
 
 #include <projects.h>
-
-#include <wx/image.h>
-#include <wx/stdpaths.h>
-#include <wx/filename.h>
-
 #include <gdalwarper.h>
 #include "ogr_spatialref.h"
 
-#define PROJ4_FREE(p)	if( p )	{	pj_free((PJ *)p);	p	= NULL;	}//TODO
+#include <wx/filename.h>
+
+#define PROJ4_FREE(p)	if( p )	{	pj_free((PJ *)p);	p	= NULL;	}
 
 
-CWMS_WMS_Base::CWMS_WMS_Base(void)
-{
-	wxStandardPaths StdPaths;
-	m_TempDir = StdPaths.GetTempDir();
-}
+CWMS_Base::CWMS_Base(void){}
+
+CWMS_Base::~CWMS_Base(void){}
 
 
-CWMS_WMS_Base::~CWMS_WMS_Base(void){}
-
-
-void		CWMS_WMS_Base::Get_Map		( void )
+wxString	CWMS_Base::Get_Map(void)
 {
 // public function. which calls private functons
 	wmsReqBBox =		_ComputeBbox();
 
-	wxString tempMapPath =	_Download();//abstract function, possible to define various wms drivers
+	wxString tempMapPath;
+	tempMapPath = _Download();//abstract function, possible definition various WMS drivers
+	if(m_bReProj)  tempMapPath =  _GdalWarp		(tempMapPath);
 
-				_CreateOutputMap(tempMapPath);
+	return tempMapPath;
 }
 
 
-TSG_Rect        CWMS_WMS_Base::_ComputeBbox	(void)
+TSG_Rect        CWMS_Base::_ComputeBbox(void)
 {
 	TSG_Rect wmsReqBBox;
+	wxString proj(m_Proj.c_str());
+	proj = proj.MakeLower();
+
+	wxString init (SG_T("+init="));
+
+	projPJ dst = pj_init_plus(SG_STR_SGTOMB((init+proj)));
+
 	if(m_bReProj && m_bReProjBbox)
 	{
 	// destination bbox points are transformed into wms
 	// projection and then bbox is created from extreme coordinates
 	// of the transformed points
-		projPJ src ;
-		wxString proj(m_Proj.c_str());//TODO taky malym???
-		wxString init (SG_T("+init="));
-		proj = proj.MakeLower();
+		if(!dst)
+		{
+		    throw CWMS_Exception(wxT("Wrong projection format.") ); //+ m_ReProj());
+		}
 
+		projPJ src ;
 		if(!(src = pj_init_plus(SG_STR_SGTOMB(m_ReProj))))
 		{
-			   throw WMS_Exception(wxT("Wrong PROJ4 format of destination projection."));
+			throw CWMS_Exception(wxT("Wrong PROJ4 format of destination projection."));
 		}
 
-		projPJ dst ;
-		if(!(dst = pj_init_plus(SG_STR_SGTOMB((init+proj)))))
-		{
-		    throw WMS_Exception(wxT("Wrong PROJ4 format:") ); //+ m_ReProj());
-		}
-
+		m_LayerProjDef =  wxString::FromUTF8(pj_get_def(src, 0));
 		const int size = 2;
 		double x[size] = {m_BBox.xMax, m_BBox.xMin};
 		double y[size] = {m_BBox.yMax, m_BBox.yMin};
-
 
 		pj_transform( src, dst, size, 0, x, y, NULL );
 		PROJ4_FREE(src);
 		PROJ4_FREE(dst);
 
-		for(int i_coorX = 0; i_coorX < size; i_coorX++)
+		for(int i_CoorX = 0; i_CoorX < size; i_CoorX++)
 		{
-
-			for(int i_coorY = 0; i_coorY < size; i_coorY++)
+			for(int i_CoorY = 0; i_CoorY < size; i_CoorY++)
 			{
-			    if(i_coorY == 0 && i_coorX == 0)
+			    if(i_CoorY == 0 && i_CoorX == 0)
 			    {
-				wmsReqBBox.yMax = y[i_coorY];
-				wmsReqBBox.yMin = y[i_coorY];
-				wmsReqBBox.xMax = x[i_coorX];
-				wmsReqBBox.xMin = x[i_coorX];
+				wmsReqBBox.yMax = y[i_CoorY];
+				wmsReqBBox.yMin = y[i_CoorY];
+				wmsReqBBox.xMax = x[i_CoorX];
+				wmsReqBBox.xMin = x[i_CoorX];
 				continue;
 			    }
 
-			    if   (wmsReqBBox.yMax < y[i_coorY]) wmsReqBBox.yMax = y[i_coorY];
-			    else if   (wmsReqBBox.yMin > y[i_coorY]) wmsReqBBox.yMin = y[i_coorY];
+			    if   (wmsReqBBox.yMax < y[i_CoorY]) wmsReqBBox.yMax = y[i_CoorY];
+			    else if   (wmsReqBBox.yMin > y[i_CoorY]) wmsReqBBox.yMin = y[i_CoorY];
 
-			    if   (wmsReqBBox.xMax < x[i_coorX]) wmsReqBBox.xMax = x[i_coorX];
-			    else if   (wmsReqBBox.xMin > x[i_coorX]) wmsReqBBox.xMin = x[i_coorX];
+			    if   (wmsReqBBox.xMax < x[i_CoorX]) wmsReqBBox.xMax = x[i_CoorX];
+			    else if   (wmsReqBBox.xMin > x[i_CoorX]) wmsReqBBox.xMin = x[i_CoorX];
 			}
 		}
 	}
 
 	// no transformation required
-	else wmsReqBBox = m_BBox;
-
+	else
+	{	wmsReqBBox = m_BBox;
+		if(dst) m_LayerProjDef = wxString::FromUTF8(pj_get_def(dst, 0));
+	}
 	return wmsReqBBox;
 }
 
 
-
-
-
-void	CWMS_WMS_Base::_CreateOutputMap(wxString & tempMapPath)
-{
-	    if(m_bReProj)  tempMapPath =  _GdalWarp		(tempMapPath);
-
-	    wxImage	Image;
-	    if( Image.LoadFile(tempMapPath) == false )
-	    {
-		    throw WMS_Exception(wxT("Unable read image from:") + tempMapPath);
-
-	    }
-	    else
-	    {
-		    CSG_Grid	*pGrid	= SG_Create_Grid(SG_DATATYPE_Int, Image.GetWidth(), Image.GetHeight(), 1, m_BBox.xMin, m_BBox.yMin);
-
-		    for(int y=0, yy=pGrid->Get_NY()-1; y<pGrid->Get_NY(); y++, yy--)
-		    {
-			    for(int x=0; x<pGrid->Get_NX(); x++)
-			    {
-				    pGrid->Set_Value(x, y, SG_GET_RGB(Image.GetRed(x, yy), Image.GetGreen(x, yy), Image.GetBlue(x, yy)));
-
-				    if (!Image.GetAlpha(x, yy))
-				    {
-					pGrid->Set_NoData(x, y );
-				    }
-			    }
-		    }
-
-		    pGrid->Set_Name(m_Capabilities.m_Title);//TODO layer name
-		    m_pOutputMap->Set_Value(pGrid);
-		    modul->DataObject_Set_Colors(pGrid, 100, SG_COLORS_BLACK_WHITE);
-
-		    CSG_Parameters Parameters;
-
-		    if( modul->DataObject_Get_Parameters(pGrid, Parameters) && Parameters("COLORS_TYPE") )//TODO
-		    {
-			    Parameters("COLORS_TYPE")->Set_Value(3);	// Color Classification Type: RGB
-			    modul->DataObject_Set_Parameters(pGrid, Parameters);
-		    }
-	}
-	wxRemoveFile(tempMapPath);
-
-
-
-}
-
-wxString	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )
+wxString	CWMS_Base::_GdalWarp(const wxString & tempMapPath)
 {
 // reprojectiong raster into demanded projection, modified code from http://www.gdal.org/warptut.html
 
 	GDALDataType tempMapDataType;
 	GDALDatasetH warpedTemMapDataset;
 
-
 	GDALDatasetH tempMapDataset;
 
 	tempMapDataset = GDALOpen(tempMapPath.mb_str(), GA_ReadOnly );
 	if(tempMapDataset == NULL)
 	{
-		throw WMS_Exception(wxT("Unable to create dataset."));
+		throw CWMS_Exception(wxT("Unable to create dataset."));
 	}
 
 	// Create output with same datatype as first input band.
@@ -165,11 +113,11 @@ wxString	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )
 	tempMapDataType = GDALGetRasterDataType(GDALGetRasterBand(tempMapDataset,1));
 
 	// Get output driver (GeoTIFF format)
-	wxString  gdalDrvFormat = wxT("GTiff");//TODO
+	wxString  gdalDrvFormat = wxT("GTiff");
 	GDALDriverH GdalF = GDALGetDriverByName(gdalDrvFormat.mb_str());
 	if(!GdalF)
 	{
-		throw WMS_Exception(wxT("Unable to find driver:") +  gdalDrvFormat);
+		throw CWMS_Exception(wxT("Unable to find driver:") +  gdalDrvFormat);
 	}
 
 	// Get Source coordinate system.
@@ -180,10 +128,10 @@ wxString	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )
 	pSrcWKT = GDALGetProjectionRef(tempMapDataset);
 	if(!pSrcWKT && strlen(pSrcWKT))
 	{
-		throw WMS_Exception(wxT("Unable to get projection from downloaded file."));
+		throw CWMS_Exception(wxT("Unable to get projection from downloaded file."));
 	}
 
-	// Setup output coordinate system that is UTM 11 WGS84.
+	// Setup output coordinate system
 
 	OGRSpatialReference oSRS;
 
@@ -203,7 +151,7 @@ wxString	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )
 					     FALSE, 0, 1 );
 	if(!hTransformArg)
 	{
-		throw WMS_Exception(wxT("Unable to create GDALCreateGenImgProjTransformer."));
+		throw CWMS_Exception(wxT("Unable to create GDALCreateGenImgProjTransformer."));
 	}
 	// Get approximate output georeferenced bounds and resolution for file.
 
@@ -214,7 +162,7 @@ wxString	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )
 	eErr = GDALSuggestedWarpOutput( tempMapDataset,
 					GDALGenImgProjTransform, hTransformArg,
 					adfDstGeoTransform, &nPixels, &nLines );
-	//CPLAssert( eErr == CE_None ); TODO
+	//TODO CPLAssert eErr
 
 	GDALDestroyGenImgProjTransformer( hTransformArg );
 
@@ -225,7 +173,7 @@ wxString	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )
 
 	if(warpedTemMapDataset == NULL)
 	{
-		throw WMS_Exception(wxT("Unable to create dataset."));
+		throw CWMS_Exception(wxT("Unable to create dataset."));
 	}
 	// Write out the projection definition.
 
@@ -268,7 +216,7 @@ wxString	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )
 			GDALGetRasterXSize( warpedTemMapDataset ),
 			GDALGetRasterYSize( warpedTemMapDataset ) );
 
-	//TODOCE_Failure
+	//TODO CE_Failure
 
 	GDALDestroyGenImgProjTransformer( psWarpOptions->pTransformerArg );
 	GDALDestroyWarpOptions( psWarpOptions );
@@ -280,3 +228,5 @@ wxString	CWMS_WMS_Base::_GdalWarp		( wxString & tempMapPath )
 
 	return warpedTempMapPath;
 }
+
+

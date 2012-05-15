@@ -1,67 +1,14 @@
-/**********************************************************
- * Version $Id: table.cpp 911 2011-02-14 16:38:15Z reklov_w $
- *********************************************************/
-
-///////////////////////////////////////////////////////////
-//                                                       //
-//                         SAGA                          //
-//                                                       //
-//      System for Automated Geoscientific Analyses      //
-//                                                       //
-//                    Module Library:                    //
-//                   garden_webservices                  //
-//                                                       //
-//-------------------------------------------------------//
-//                                                       //
-//                     wms_import.cpp                    //
-//                                                       //
-//                 Copyright (C) 2011 by                 //
-//                StepanTurek, Olaf Conrad               //
-//                                                       //
-//-------------------------------------------------------//
-//                                                       //
-// This file is part of 'SAGA - System for Automated     //
-// Geoscientific Analyses'. SAGA is free software; you   //
-// can redistribute it and/or modify it under the terms  //
-// of the GNU General Public License as published by the //
-// Free Software Foundation; version 2 of the License.   //
-//                                                       //
-// SAGA is distributed in the hope that it will be       //
-// useful, but WITHOUT ANY WARRANTY; without even the    //
-// implied warranty of MERCHANTABILITY or FITNESS FOR A  //
-// PARTICULAR PURPOSE. See the GNU General Public        //
-// License for more details.                             //
-//                                                       //
-// You should have received a copy of the GNU General    //
-// Public License along with this program; if not,       //
-// write to the Free Software Foundation, Inc.,          //
-// 59 Temple Place - Suite 330, Boston, MA 02111-1307,   //
-// USA.                                                  //
-//                                                       //
-//-------------------------------------------------------//
-//                                                       //
-//    e-mail:     oconrad@saga-gis.org                   //
-//                                                       //
-//    contact:    Olaf Conrad                            //
-//                Institute of Geography                 //
-//                University of Hamburg                  //
-//                Germany                                //
-//                                                       //
-///////////////////////////////////////////////////////////
-
-//---------------------------------------------------------
-
-
 #include "wms_import.h"
-#include <wx/xml/xml.h>
-#include "cpl_port.h"
+#include <algorithm>
+#include <wx/image.h>
+
 
 CWMS_Import::CWMS_Import(void)
 {
 
-	Set_Name		(_TL(" WMS"));
+	Set_Name		(_TL("WMS"));
 
-	Set_Author		(SG_T("S. Turek (c) 2012"));
+	Set_Author		(SG_T("S. Turek (c) 2012, based on Olaf Conrad's code"));
 
 	Set_Description	(_TW(
 		"This module works as Web Map Service (WMS) client. "
@@ -109,238 +56,330 @@ CWMS_Import::~CWMS_Import(void)
 {
 
 	delete m_WMS;
-
 }
 
 
 bool CWMS_Import::On_Execute(void)
 {
 
-	// new class
-	try
-	{
-		m_WMS = new CWMS_WMS_Gdal_drv;
-	}
-	catch(std::bad_alloc& except)
-	{
-		Message_Add(CSG_String::Format(SG_T("ERROR: Unable to allocate memomry: %s"), except.what()));
+	// new WNS class
+    	try
+    	{
+		m_WMS = new CWMS_Gdal_drv;
+    	}
+    	catch(std::bad_alloc& except)
+    	{
+		Message_Add(CSG_String::Format(SG_T("ERROR: Unable to allocate memomry: %s"), except.what()));//TODO translation
 		return false;
-	}
+    	}
 
+    	//Gets information from the first dialog about server URL, password and username
+    	m_WMS->m_ServerUrl	= Parameters("SERVER")->asString();
 
-	m_WMS->m_ServerUrl	= Parameters("SERVER")->asString();
-
-	if(m_WMS->m_ServerUrl.Contains(wxT("http://")))
-	{
+    	if(m_WMS->m_ServerUrl.Contains(wxT("http://")))
+    	{
 		m_WMS->m_ServerUrl		= Parameters("SERVER")->asString() + 7;
-	}
+    	}
 
+    	wxString userName = Parameters("USERNAME")->asString();
+    	wxString password = Parameters("PASSWORD")->asString();
 
-	wxString ServerUrl	= m_WMS->m_ServerUrl.BeforeFirst(SG_T('/'));
-
-	m_WMS->m_Capabilities.m_Server.SetUser		(Parameters("USERNAME")->asString());
-	m_WMS->m_Capabilities.m_Server.SetPassword	(Parameters("PASSWORD")->asString());
-
-	if(m_WMS->m_Capabilities.m_Server.Connect(ServerUrl.c_str()) == false)
-	{
-		Message_Add(_TL("ERROR: Unable to connect to server."));
-		return( false );
-	}
-
-
-	// GetCapabilities request to server
-	try
-	{
-		m_WMS->m_Capabilities.Create(m_WMS);
-	}
-	catch(WMS_Exception &except)
-	{
+    	// Gets capabilities data from WMS server
+    	try
+    	{
+		m_WMS->m_Capabilities.Create(m_WMS->m_ServerUrl, userName, password);
+    	}
+    	catch(CWMS_Exception &except)//TODO CPLEerr
+    	{
 		Message_Add((CSG_String("ERROR:") + CSG_String(except.what())));
 		return false;
-	}
-	catch(std::bad_alloc& except)
+    	}
+    	catch(std::bad_alloc& except)
+    	{
+		Message_Add(CSG_String::Format(_TL ("ERROR: Unable to allocate memomry: %s")), except.what());
+		return false;
+    	}
+
+
+    	std::vector<CWMS_Layer*> layers;
+    	m_WMS->m_Capabilities.Get_Layers(layers);
+
+    	CSG_Parameters	parLayers;
+	_Create_Layers_Dialog( layers, parLayers);
+
+	std::vector<CWMS_Layer*> selectedLayers;
+
+	// show layers dialog
+	if( Dlg_Parameters(&parLayers, _TL("Choose layers"))) { }
+
+	//get selected layers in the layers dialog
+	for(int i = 0; i < layers.size(); i++)
 	{
-		Message_Add(CSG_String::Format(SG_T("ERROR: Unable to allocate memomry: %s"), except.what()));
+		CSG_Parameter * pLayerPar = parLayers(CSG_String::Format(SG_T("layer_%d"), layers[i]->m_id) );
+		if(!pLayerPar) continue;
+		if(pLayerPar->asBool())
+		{
+			selectedLayers.push_back(layers[i]);
+		}
+	}
+
+	if(selectedLayers.size() < 1)
+	{
+		Message_Add(_TL("No layers choosen"));
 		return false;
 	}
 
 
-	std::vector<CWMS_Layer*> layers;
+	CSG_Parameters	parSettings;
+	CSG_Parameters	* pParDialog;
 
-	m_WMS->m_Capabilities.Get_Layers(layers);
+	// dialog with WMS request settings
+	pParDialog = _Create_Settings_Dialog(selectedLayers, parSettings);
 
-	CSG_Parameters	parLayers;
-	Create_Layers_Dialog( layers, parLayers);
+	// show dialog with WMS request settings
+	if( Dlg_Parameters(pParDialog, _TL("WMS Request settings"))) { }
 
-	std::vector<CWMS_Layer*> selectedLayers;
-	do
+
+	//puts layers into chosen order
+
+	std::vector<CWMS_Layer*> selectedLayersOrdered(selectedLayers.size(), NULL);
+	std::vector<int> ilayerOrderSet;
+	for(int i_Layer = 0; i_Layer < selectedLayers.size(); i_Layer++)
 	{
-		// show layers dialog
-		if( Dlg_Parameters(&parLayers, _TL("Choose layers"))) { }
-
-		for(int i=0; i<layers.size(); i++)
+		int i = pParDialog->Get_Parameter(CSG_String::Format(SG_T("LAYER_NUMBER_%d"), i_Layer).c_str())->asChoice()->asInt();
+		if(i != 0)
 		{
-		       if(parLayers(CSG_String::Format(SG_T("layer_%d"), layers[i]->m_id) )->asBool())
+			selectedLayersOrdered[i_Layer] = selectedLayers[i - 1];
+			ilayerOrderSet.push_back(i - 1);
+		}
+	}
+
+	//puts not chosen layers (in order layers dialog) into empty places //TODO warning???
+	std::vector<CWMS_Layer*>::iterator it;
+	for(int i_Layer = 0; i_Layer < selectedLayers.size(); i_Layer++)
+	{
+		bool bIsSet = false;
+		for(int i_ilayerOrderSet = 0; i_ilayerOrderSet < ilayerOrderSet.size(); i_ilayerOrderSet++)
+		{
+			if(ilayerOrderSet[i_ilayerOrderSet] == i_Layer)
 			{
-				selectedLayers.push_back(layers[i]);
+				bIsSet = true;
+				break;
 			}
 		}
+		if(bIsSet) continue;
 
-		if(selectedLayers.size() < 1) Message_Dlg(_TL("No layers choosen"));
+		ilayerOrderSet.push_back(i_Layer);
+		for(int i = 0; i < selectedLayersOrdered.size(); i++)
+		{
+			if(selectedLayersOrdered[i] == NULL)
+			{
+				selectedLayersOrdered[i] = selectedLayers[i_Layer];
+				break;
+			}
+		}
 	}
-	while(selectedLayers.size() < 1);
 
-	CSG_Parameters	parSettings;
-	Create_Settings_Dialog(selectedLayers, parSettings);
-
-	// show dialog with other request settings
-	if( Dlg_Parameters(&parSettings, _TL("WMS Request settings"))) { }
-
-
-	// assing chosen values to m_WMS class members
+	// assigns chosen values from pParDialog to m_WMS class members
 	wxString style;
-	for(int i_layer = 0; i_layer < selectedLayers.size(); i_layer++)
+	for(int i_Layer = 0; i_Layer < selectedLayersOrdered.size(); i_Layer++)
 	{
-		CSG_Parameter * pStyleChoicePar = parSettings.Get_Parameter( wxString::Format(SG_T("style_%d"),  selectedLayers[i_layer]->m_id));
+		CSG_Parameter * pStyleChoicePar = pParDialog->Get_Parameter( wxString::Format(SG_T("STYLE_%d"),  selectedLayersOrdered[i_Layer]->m_id));
 		if(pStyleChoicePar)
 		{
 			style = pStyleChoicePar->asString();
 		}
 		else style = wxT("");
-		if(i_layer != 0)
+
+		if(i_Layer != 0)
 		{
 		    m_WMS->m_Styles += wxT(",");
 		    m_WMS->m_Layers += wxT(",");
 		}
+
+		std::vector<wxXmlNode *> selLayersNames = selectedLayersOrdered[i_Layer]->getElms(wxT("Name"));
+		if(selLayersNames.size() < 1) continue;
+
 		m_WMS->m_Styles += style;
-		m_WMS->m_Layers += selectedLayers[i_layer]->m_Name;
+		m_WMS->m_Layers += selLayersNames[0]->GetNodeContent();
 	}
 
-	m_WMS->m_Proj =  parSettings.Get_Parameter( "PROJ")->asString() ;
+	m_WMS->m_Proj =  pParDialog->Get_Parameter( "PROJ")->asString() ;
 
-	CSG_Parameter_Range * pXrangePar = parSettings.Get_Parameter( "X_RANGE")->asRange();
+	CSG_Parameter_Range * pXrangePar = pParDialog->Get_Parameter( "X_RANGE")->asRange();
 
 	m_WMS->m_BBox.xMax =  pXrangePar->Get_HiVal();
 	m_WMS->m_BBox.xMin =  pXrangePar->Get_LoVal();
 
-	CSG_Parameter_Range * pYrangePar = parSettings.Get_Parameter( "Y_RANGE")->asRange();
+	CSG_Parameter_Range * pYrangePar = pParDialog->Get_Parameter( "Y_RANGE")->asRange();
 
 	m_WMS->m_BBox.yMax =  pYrangePar->Get_HiVal();
 	m_WMS->m_BBox.yMin =  pYrangePar->Get_LoVal();
 
-	m_WMS->m_Format = parSettings.Get_Parameter( "FORMAT")->asString();
+	m_WMS->m_Format = pParDialog->Get_Parameter( "FORMAT")->asString();
 
-	m_WMS->m_sizeX = parSettings.Get_Parameter("SIZE_X")->asInt();//TODO
-	m_WMS->m_sizeY = parSettings.Get_Parameter("SIZE_Y")->asInt();
+	m_WMS->m_sizeX = pParDialog->Get_Parameter("SIZE_X")->asInt();
+	m_WMS->m_sizeY = pParDialog->Get_Parameter("SIZE_Y")->asInt();
 
-	m_WMS->m_pOutputMap = Parameters("MAP");
+	m_pOutputMap = Parameters("MAP");
 
-	m_WMS->m_blockSizeX =  parSettings.Get_Parameter("MAX_X")->asInt();
-	m_WMS->m_blockSizeY =  parSettings.Get_Parameter("MAX_Y")->asInt();
+	m_WMS->m_blockSizeX =  pParDialog->Get_Parameter("MAX_X")->asInt();
+	m_WMS->m_blockSizeY =  pParDialog->Get_Parameter("MAX_Y")->asInt();
 
-	m_WMS->modul = this;
+	m_WMS->m_bTransparent = pParDialog->Get_Parameter("TRANSPARENT")->asBool();
 
-	m_WMS->m_bTransparent = parSettings.Get_Parameter("TRANSPARENT")->asBool();
+	m_WMS->m_ReProj = pParDialog->Get_Parameter("REPROJ_PARAMS")->asString();
+	m_WMS->m_bReProj = pParDialog->Get_Parameter("REPROJ")->asBool();
+	m_WMS->m_bReProjBbox = pParDialog->Get_Parameter("REPROJ_BBOX")->asBool();
 
-	m_WMS->m_ReProj = parSettings.Get_Parameter("REPROJ_PARAMS")->asString();//TEST na bool
-	m_WMS->m_bReProj = parSettings.Get_Parameter("REPROJ")->asBool();
-	m_WMS->m_bReProjBbox = parSettings.Get_Parameter("REPROJ_BBOX")->asBool();
-
-	if( parSettings("REPROJ_METHOD")->asString() == SG_T("near")) m_WMS->m_ReProjMethod = 0;
-	else if( parSettings("REPROJ_METHOD")->asString() == SG_T("bilinear")) m_WMS->m_ReProjMethod = 1;
-	else if( parSettings("REPROJ_METHOD")->asString() == SG_T("cubic")) m_WMS->m_ReProjMethod = 2;
-	else if( parSettings("REPROJ_METHOD")->asString() == SG_T("cubicspline")) m_WMS->m_ReProjMethod = 3;
-	else if( parSettings("REPROJ_METHOD")->asString() == SG_T("lanczos")) m_WMS->m_ReProjMethod = 4;
-	else m_WMS->m_ReProjMethod = 0;
+	CSG_String chosenMethod = pParDialog->Get_Parameter("REPROJ_METHOD")->asString();
+	if(chosenMethod == SG_T("near"))		m_WMS->m_ReProjMethod = 0;
+	else if(chosenMethod == SG_T("bilinear"))	m_WMS->m_ReProjMethod = 1;
+	else if(chosenMethod == SG_T("cubic"))		m_WMS->m_ReProjMethod = 2;
+	else if(chosenMethod == SG_T("cubicspline"))	m_WMS->m_ReProjMethod = 3;
+	else if(chosenMethod == SG_T("lanczos"))	m_WMS->m_ReProjMethod = 4;
+	else						m_WMS->m_ReProjMethod = 0;
 
 
 	// downloads map and imports it into SAGA as grid
+
+	//TODO version warning
+	wxString mapFile;
 	try
 	{
-	    m_WMS->Get_Map();//TODO delete
+	    mapFile = m_WMS->Get_Map();
 	}
-	catch(WMS_Exception &except)
+	catch(CWMS_Exception &except)
 	{
 	    Message_Add((CSG_String("ERROR:") + CSG_String(except.what())));
 	    return false;
 	}
 
-	return(true);
+	if(_Import_Map(mapFile)) return true;
+	return false;
 }
 
 
-bool CWMS_Import::Create_Layers_Dialog( std::vector<CWMS_Layer*> layers, CSG_Parameters & parLayers)
+bool CWMS_Import::_Create_Layers_Dialog(const std::vector<CWMS_Layer *> & layers, CSG_Parameters & parLayers)
 {
-// builds layer tree in dialog
-	CWMS_Layer	*	prevLayer;
-	CSG_Parameter *	rootLayerPar = NULL;
-	CSG_Parameter *	layerPar = NULL;
-	CSG_Parameter *	parrentLayerPar = parLayers.Add_Node(NULL, "ND_LAYERS", _TL("Available layers:"), _TL(""));
 
-	for(int i_layer=0; i_layer<layers.size(); i_layer++)
+	CWMS_Layer  * pPrevLayer = NULL;
+	CSG_Parameter *	pRootLayerPar = NULL;
+	CSG_Parameter *	pLayerPar = NULL;
+	CSG_Parameter *	pParrentLayerPar = parLayers.Add_Node(NULL, "ND_LAYERS", _TL("Available layers:"), _TL(""));
+	CSG_String nodeTitle;
+
+	for(int i_Layer = 0; i_Layer < layers.size(); i_Layer++)
 	{
-		prevLayer = layers[i_layer];
+		pPrevLayer = layers[i_Layer];
 
-		layerPar = parLayers.Add_Value(parrentLayerPar, CSG_String::Format(SG_T("layer_%d"), layers[i_layer]->m_id), layers[i_layer]->m_Title, SG_T(""), PARAMETER_TYPE_Bool, false);
+		nodeTitle = _Get_Layers_Existing_Name(pPrevLayer);
 
-		if( i_layer == 0)
+		if(pPrevLayer->getElms(wxT("Name")).size() == 0)
+			pLayerPar = parLayers.Add_Info_String(pParrentLayerPar, CSG_String::Format(SG_T("layer_%d"),
+							    layers[i_Layer]->m_id), nodeTitle, SG_T(""), SG_T("") );
+
+		else
+			pLayerPar = parLayers.Add_Value(pParrentLayerPar, CSG_String::Format(SG_T("layer_%d"),
+						       layers[i_Layer]->m_id), nodeTitle, SG_T(""), PARAMETER_TYPE_Bool, false);
+
+		if(i_Layer == 0)
 		{
-			rootLayerPar= layerPar;
-			parrentLayerPar = layerPar;
+			pRootLayerPar= pLayerPar;
+			pParrentLayerPar = pLayerPar;
 			continue;
 		}
-		else if( i_layer == layers.size()-1)
+		else if(i_Layer == layers.size() - 1)
 		{
 			continue;
 		}
-		else if( layers[i_layer+1]->m_pParrentLayer->m_id == 0)
+		else if(layers[i_Layer+1]->m_pParrentLayer->m_id == 0)
 		{
-			parrentLayerPar = rootLayerPar;
+			pParrentLayerPar = pRootLayerPar;
 			continue;
 		}
 
-		bool bPrevIsParrent = (prevLayer->m_id == layers[i_layer+1]->m_pParrentLayer->m_id);
-		bool bPrevSameParrent = (layers[i_layer+1]->m_pParrentLayer->m_id == prevLayer->m_pParrentLayer->m_id);
+		bool bPrevIsParrent = (pPrevLayer->m_id == layers[i_Layer + 1]->m_pParrentLayer->m_id);
+		bool bPrevSameParrent = (layers[i_Layer + 1]->m_pParrentLayer->m_id == pPrevLayer->m_pParrentLayer->m_id);
 
 		if(!bPrevIsParrent && !bPrevSameParrent)
 		{
-			parrentLayerPar = rootLayerPar;
+			pParrentLayerPar = pRootLayerPar;
 		}
 
-		if( bPrevIsParrent) parrentLayerPar = layerPar;
+		if(bPrevIsParrent) pParrentLayerPar = pLayerPar;
 	}
 
 	return true;
-    }
+   }
 
-
-
-
-bool CWMS_Import::Create_Settings_Dialog( std::vector<CWMS_Layer*> selectedLayers, CSG_Parameters & parSettings)
+CSG_String CWMS_Import::_Get_Layers_Existing_Name(CWMS_Layer * pLayer)
 {
-// builds dialog for WMS request settings
-	CSG_Parameter * reqPropertiesNode = parSettings.Add_Node(NULL, "ND_REQ_PROPERTIES", _TL("Request properties"), _TL(""));
-	CSG_Parameter * projNode = parSettings.Add_Node(reqPropertiesNode, "ND_PROJ", _TL("Projection options"), _TL(""));
+	CSG_String layerTitle;
+	if(!pLayer) return layerTitle;
 
-	std::vector<wxString> availProjs = m_WMS->m_Capabilities.Proj_Intersect(selectedLayers );
+	if(pLayer->getElms(wxT("Title")).size() != 0)
+		layerTitle = pLayer->getElms(wxT("Title"))[0]->GetNodeContent();
+	else if(pLayer->getElms(wxT("Name")).size() != 0)
+		layerTitle = pLayer->getElms(wxT("Name"))[0]->GetNodeContent();
+	else
+		layerTitle = pLayer->m_id;
+
+       return layerTitle;
+}
+
+CSG_Parameters * CWMS_Import::_Create_Settings_Dialog(const std::vector<CWMS_Layer*> & selectedLayers, CSG_Parameters & parSettings)
+{
+ //builds dialog for WMS request settingss
+
+	//get CWMS_Projection (projections and bboxes), which are joint for all selected layers
+	std::vector<CWMS_Projection> availProjs = _Proj_Intersect(selectedLayers);
+
+	// in parSettings there are saved data for all projections and bboxes from availProjs, this is used for callback function _Settings_Dial_Callback
+	// parSettings also contains parDialog, where are paraneters, which are displayed in dialog
+	if (selectedLayers.size() < 1){}
+	else if ((selectedLayers[0]->getElms(m_WMS->m_Capabilities.m_ProjTag).size() != 0))
+	{
+		TSG_Rect bbox;
+		CSG_Parameter * pProjDataNode;
+
+		for(int i_Proj = 0; i_Proj < availProjs.size(); i_Proj++)
+		{
+			pProjDataNode = parSettings.Add_Node( NULL, availProjs[i_Proj].m_Projection, _TL(""),_TL("") );
+			bbox = availProjs[i_Proj].m_GeoBBox;
+			parSettings.Add_Range	(pProjDataNode	, "X_RANGE", _TL("X Range"), _TL(""), bbox.xMin, bbox.xMax, bbox.xMin, false, bbox.xMax, false);
+			parSettings.Add_Range	(pProjDataNode	, "Y_RANGE", _TL("Y Range"), _TL(""), bbox.yMin, bbox.yMax, bbox.yMin, false, bbox.yMax, false);
+		}
+	}
+
+	// rest of code of the method creates Dialog (parameters in parDialog)
+	CSG_Parameters * pParDialog = parSettings.Add_Parameters    (NULL, SG_T("DATA_FOR_CALLBACK"), SG_T(""), SG_T("") )->asParameters();
+
+	pParDialog->Create  (&parSettings, SG_T("DATA_FOR_CALLBACK"), SG_T("DATA_FOR_CALLBACK"), SG_T("DATA_FOR_CALLBACK"));
+
+	CSG_Parameter * pReqPropertiesNode = pParDialog->Add_Node   (NULL, "ND_REQ_PROPERTIES", _TL("Request properties"), _TL(""));
+
+
+	//------------------------- PROJECTION OPTIONS ---------------------------//
+
+	CSG_Parameter * pProjNode = pParDialog->Add_Node    (pReqPropertiesNode, "ND_PROJ", _TL("Projection options"), _TL(""));
 
 	wxString projChoiceItems;
 
 	for(int j = 0; j< availProjs.size(); j++)
 	{
-	    projChoiceItems += availProjs[j] + SG_T("|");
+	    projChoiceItems += availProjs[j].m_Projection + SG_T("|");
 	}
 
-	parSettings.Add_Choice( projNode, SG_T("PROJ"), _TL("Choose projection"),_TL("") , projChoiceItems);
+	CSG_Parameter * pProjChoice = pParDialog->Add_Choice	(pProjNode, SG_T("PROJ"), _TL("Choose projection"),_TL("") , projChoiceItems);
 
+	CSG_Parameter * pReProjNode = pParDialog->Add_Value	(pProjNode, SG_T("REPROJ"), _TL("Reproject downloaded raster"),_TL(""),PARAMETER_TYPE_Bool, false);
 
-	CSG_Parameter * reProjNode = parSettings.Add_Value( projNode, SG_T("REPROJ"), _TL("Reproject downloaded raster"),_TL(""),PARAMETER_TYPE_Bool, false);
+	pParDialog->Add_String	(pReProjNode, "REPROJ_PARAMS", _TL("PROJ 4 format of grid projection:"), _TL(""), SG_T(""));
 
-	parSettings.Add_String(   reProjNode	, "REPROJ_PARAMS"	, _TL("PROJ 4 format of grid projection:"),    _TL("") ,SG_T("")   );
+	pParDialog->Add_Value	(pReProjNode, SG_T("REPROJ_BBOX"), _TL("Coordinates of BBOX in projection of grid:"),_TL(""),PARAMETER_TYPE_Bool, false);
 
-	parSettings.Add_Value( reProjNode, SG_T("REPROJ_BBOX"), _TL("Coordinates of BBOX in projection of grid:"),_TL(""),PARAMETER_TYPE_Bool, false);
-
-	parSettings.Add_Choice(reProjNode	, "REPROJ_METHOD"	, _TL("Reprojection method")		, _TL(""),
+	pParDialog->Add_Choice	(pReProjNode	, "REPROJ_METHOD"	, _TL("Reprojection method")		, _TL(""),
 				CSG_String::Format
 				(
 					SG_T("%s|%s|%s|%s|%s|"),
@@ -351,152 +390,303 @@ bool CWMS_Import::Create_Settings_Dialog( std::vector<CWMS_Layer*> selectedLayer
 					SG_T("lanczos")
 				));
 
-	CSG_Parameter * bboxNode = parSettings.Add_Node(reqPropertiesNode, "BBOX", _TL("BBOX"), _TL(""));
+	CSG_Parameter * pBBoxNode = pParDialog->Add_Node(pReqPropertiesNode, "BBOX", _TL("BBOX"), _TL(""));
 
-	if ((selectedLayers[0]->Get_Projections().size() != 0))//TODO zavislost na vybrane projekci
+	pParDialog->Add_Range(pBBoxNode, "X_RANGE",  _TL("X Range"), _TL(""));
+	pParDialog->Add_Range(pBBoxNode, "Y_RANGE",  _TL("Y Range"), _TL(""));
+
+	CSG_Parameter * pBBoxData = parSettings.Get_Parameter(pProjChoice->asString());
+	if(pBBoxData)
 	{
-			CSG_Rect		r(selectedLayers[0]->Get_Projections()[0].m_GeoBBox);
-			parSettings.Add_Range	(bboxNode	, "X_RANGE"	, _TL("X Range")	, _TL(""), r.Get_XMin(), r.Get_XMax(), r.Get_XMin(), false, r.Get_XMax(), false);
-			parSettings.Add_Range	(bboxNode	, "Y_RANGE"	, _TL("Y Range")	, _TL(""), r.Get_YMin(), r.Get_YMax(), r.Get_YMin(), false, r.Get_YMax(), false);
-			parSettings.Add_Value	(bboxNode	, "CELLSIZE", _TL("Cellsize")	, _TL(""), PARAMETER_TYPE_Double, r.Get_XRange() / 2001.0, 0.0, true);//TODO
+		pParDialog->Set_Parameter(SG_T("X_RANGE"), pBBoxData->Get_Child(0));
+		pParDialog->Set_Parameter(SG_T("Y_RANGE"), pBBoxData->Get_Child(1));
 	}
 
-	parSettings.Add_Choice(reqPropertiesNode	, "FORMAT"	, _TL("Format")		, _TL(""), m_WMS->m_Capabilities.m_Formats);
 
-	parSettings.Add_Value( reqPropertiesNode, SG_T("SIZE_X"), _TL("Requeste image X size:"),_TL(""),PARAMETER_TYPE_Int, 1000);
+	//-------------------------FORMAT---------------------------//
 
-	parSettings.Add_Value( reqPropertiesNode, SG_T("SIZE_Y"), _TL("Requeste image Y size:"),_TL(""),PARAMETER_TYPE_Int, 1000);
+	wxXmlNode * pReqNode = m_WMS->m_Capabilities.m_XmlH.Get_Child(m_WMS->m_Capabilities.m_pCapNode, SG_T("Request"));
+	wxXmlNode * pGetMapNode = m_WMS->m_Capabilities.m_XmlH.Get_Child(pReqNode, SG_T("GetMap"));
+	std::vector<wxXmlNode *> formats = m_WMS->m_Capabilities.m_XmlH.Get_Children(pGetMapNode, SG_T("Format"));
+
+	wxString formatsCoice;
+	for(int i_Format = 0; i_Format < formats.size(); i_Format++)
+	{
+		formatsCoice	+= formats[i_Format]->GetNodeContent().c_str();
+		formatsCoice	+= SG_T("|");
+	}
+
+	pParDialog->Add_Choice(pReqPropertiesNode	, "FORMAT"	, _TL("Format")		, _TL(""), formatsCoice);
+
+	//-------------------------SIZE OPTIONS---------------------------//
+
+	int minSize = 100;
+	int maxSize = 20000;
+
+	pParDialog->Add_Value( pReqPropertiesNode, SG_T("SIZE_X"), _TL("Requeste image X size:"),_TL(""),PARAMETER_TYPE_Int, 1000, minSize, true, maxSize, true);
+
+	pParDialog->Add_Value( pReqPropertiesNode, SG_T("SIZE_Y"), _TL("Requeste image Y size:"),_TL(""),PARAMETER_TYPE_Int, 1000, minSize, true, maxSize, true);
+
+	pParDialog->Add_Value( pReqPropertiesNode, SG_T("MAX_X"), _TL("Block size X:"),_TL(""),PARAMETER_TYPE_Int, 400, minSize, true, maxSize, true);
+
+	pParDialog->Add_Value( pReqPropertiesNode, SG_T("MAX_Y"), _TL("Block size Y:"),_TL(""),PARAMETER_TYPE_Int, 400, minSize, true, maxSize, true);
 
 
-	parSettings.Add_Value( reqPropertiesNode, SG_T("MAX_X"), _TL("Block size X:"),_TL(""),PARAMETER_TYPE_Int, 400);
-	parSettings.Add_Value( reqPropertiesNode, SG_T("MAX_Y"), _TL("Block size Y:"),_TL(""),PARAMETER_TYPE_Int, 400);
+	//-------------------------STYLE OPTIONS---------------------------//
 
-	//TODO razeni vrstev
+	CSG_Parameter * mapStyleNode = pParDialog->Add_Node(NULL, "ND_STYLE", _TL("Map style"), _TL(""));
 
-	CSG_Parameter * mapStyleNode = parSettings.Add_Node(NULL, "ND_TRANSPARENT", _TL("Map style"), _TL(""));
+	pParDialog->Add_Value( mapStyleNode, SG_T("TRANSPARENT"), _TL("Request transparent data:"),_TL(""),PARAMETER_TYPE_Bool, true);
 
-	parSettings.Add_Value( mapStyleNode, SG_T("TRANSPARENT"), _TL("Request transparent data:"),_TL(""),PARAMETER_TYPE_Bool, true);
+	CSG_Parameter * stylesNode = pParDialog->Add_Node(mapStyleNode, "ND_STYLES", _TL("Style"), _TL(""));
 
-	CSG_Parameter * stylesNode = parSettings.Add_Node(mapStyleNode, "ND_STYLES", _TL("Style"), _TL(""));
+	wxString layerStylesCh;
+	wxString selLayerCh(wxT("|"));
+	wxString stTitle, nodeTitle;
 
 	for(int i_Layer = 0; i_Layer < selectedLayers.size(); i_Layer++)
 	{
-		wxString layerStylesCh;
-		if( selectedLayers[i_Layer]->Get_Styles().size() > 1)
+		layerStylesCh.Clear();
+
+		nodeTitle = _Get_Layers_Existing_Name(selectedLayers[i_Layer]);
+
+		if( selectedLayers[i_Layer]->getElms(wxT("Style")).size() > 0)
 		{
-			for(int j_Style = 0; j_Style< selectedLayers[i_Layer]->Get_Styles().size(); j_Style++)
+			for(int j_Style = 0; j_Style< selectedLayers[i_Layer]->getElms(wxT("Style")).size(); j_Style++)
 			{
-				layerStylesCh += selectedLayers[i_Layer]->Get_Styles()[j_Style].m_Title + SG_T("|");
+			    if(m_WMS->m_Capabilities.m_XmlH.Get_Child_Content(selectedLayers[i_Layer]->getElms(wxT("Style"))[j_Style], stTitle, wxT("Title")))
+			    layerStylesCh += stTitle + SG_T("|");
 			}
-			if( layerStylesCh.Length()!=0 )  parSettings.Add_Choice( stylesNode,  wxString::Format(SG_T("style_%d"), (int)selectedLayers[i_Layer]->m_id).c_str(), selectedLayers[i_Layer]->m_Title,_TL(""), layerStylesCh );
+			if(layerStylesCh.Length()!=0 )  pParDialog->Add_Choice( stylesNode,  wxString::Format(SG_T("STYLE_%d"), (int)selectedLayers[i_Layer]->m_id).c_str(), nodeTitle,_TL(""), layerStylesCh );
+		}
+		selLayerCh += nodeTitle + SG_T("|");
+
+	}
+
+	//-------------------------LAYERS ORDER---------------------------//
+
+	CSG_Parameter * orderLayerNode = pParDialog->Add_Node(NULL, "ND_LAYER_ORDER", _TL("Layer order"), _TL(""));
+
+	for(int i_Layer = 0; i_Layer < selectedLayers.size(); i_Layer++)
+	{
+	    pParDialog->Add_Choice(orderLayerNode, CSG_String::Format(SG_T("LAYER_NUMBER_%d"), i_Layer).c_str(), CSG_String::Format(SG_T("Choose layer no. %d"), i_Layer).c_str(), _TL(""), selLayerCh);
+	}
+
+	//-------------------------SETTING CALLBACK---------------------------//
+	pParDialog->Set_Callback_On_Parameter_Changed(_Settings_Dial_Callback);
+	pParDialog->Set_Callback(true);
+
+	return pParDialog;
+}
+
+
+int CWMS_Import::_Settings_Dial_Callback(CSG_Parameter *pParameter, int Flags)
+{
+
+	//-------------------------CALLBACK BBOX---------------------------//
+	CSG_Parameters * parDialog = pParameter->Get_Owner();
+	CSG_Parameters * parSettings =  static_cast<CSG_Parameters*>(parDialog->Get_Owner());
+
+	if(CSG_String(pParameter->Get_Identifier()).Cmp(SG_T("REPROJ")) &&
+	   CSG_String(pParameter->Get_Identifier()).Cmp(SG_T("REPROJ_BBOX"))) {}
+	else if(parDialog->Get_Parameter("REPROJ")->asBool()  && parDialog->Get_Parameter("REPROJ_BBOX")->asBool())
+	{
+		CSG_Parameter_Range * rangeX = parDialog->Get_Parameter(SG_T("X_RANGE"))->asRange();
+		rangeX->Set_HiVal(0.0);
+		rangeX->Set_LoVal(0.0);
+		CSG_Parameter_Range * rangeY = parDialog->Get_Parameter(SG_T("Y_RANGE"))->asRange();
+		rangeY->Set_HiVal(0.0);
+		rangeY->Set_LoVal(0.0);
+	}
+
+	if(!CSG_String(pParameter->Get_Identifier()).Cmp(CSG_String("PROJ")) ||
+	   !CSG_String(pParameter->Get_Identifier()).Cmp(CSG_String("REPROJ")) ||
+	   !CSG_String(pParameter->Get_Identifier()).Cmp(CSG_String("REPROJ_BBOX")))
+	{
+		CSG_Parameter * projNode = parSettings->Get_Parameter(parDialog->Get_Parameter(SG_T("PROJ"))->asString());
+		if(projNode)
+		{
+			parDialog->Set_Parameter(SG_T("X_RANGE"), projNode->Get_Child(0));
+			parDialog->Set_Parameter(SG_T("Y_RANGE"), projNode->Get_Child(1));
 		}
 	}
 
-	parSettings.Set_Callback_On_Parameter_Changed(_On_Proj_Changed);
-	parSettings.Set_Callback(true);
+	//-------------------------CALLBACK LAYERS ORDER---------------------------//
 
-}
+	CSG_Parameter * parent = pParameter->Get_Parent();
+	if(!parent) return 1;
 
-
-int CWMS_Import::_On_Proj_Changed(CSG_Parameter *pParameter, int Flags)
-{
-
-}
-
-std::vector<wxString>  CWMS_XmlHandlers::_Get_Children_Content(class wxXmlNode *pNode, const wxString & children_name)
-{
-	std::vector<wxString> childrenContent;
-	wxXmlNode	*pItem	= pNode->GetChildren();
-
-	while( pItem )
+	if(!CSG_String(parent->Get_Identifier()).Cmp(CSG_String("ND_LAYER_ORDER")))
 	{
-		if( pItem->GetName().CmpNoCase(children_name) )
-		{
-			childrenContent.push_back(pItem->GetNodeContent());
-		}
-		pItem	= pItem->GetNext();
-	}
+	    CSG_Parameter_Choice * pChoice;
+	    std::vector<CSG_String> items;
+	    std::vector<int> alreadyChosenItems;
+	    CSG_String choosenItem, choiceItems;
+	    int choosenItemNum;
 
-	return childrenContent;
-}
-
-//---------------------------------------------------------
-wxXmlNode * CWMS_XmlHandlers::_Get_Child(wxXmlNode *pNode, const wxString &Name)
-{
-	if( pNode && (pNode = pNode->GetChildren()) != NULL )
-	{
-		do
+	    for (int i_Choice = 0; i_Choice < parent->Get_Children_Count(); i_Choice++)
+	    {
+		pChoice =  parent->Get_Child(i_Choice)->asChoice();
+		if(i_Choice == 0)
 		{
-			if( !pNode->GetName().CmpNoCase(Name) )
+			for(int i_Item = 0; i_Item < pChoice->Get_Count(); i_Item++)
 			{
-				return( pNode );
+				items.push_back(CSG_String(pChoice->Get_Item(i_Item)));
 			}
 		}
-		while( (pNode = pNode->GetNext()) != NULL );
-	}
 
-	return( NULL );
+		choosenItem =  parent->Get_Child(i_Choice)->asString();
+		choosenItemNum = -1;
+
+		for(int i_Item = 0; i_Item < items.size(); i_Item++)
+		{
+			if(!choosenItem.Cmp(items[i_Item]))
+			{
+				choosenItemNum = i_Item;
+				break;
+			}
+		}
+
+		choiceItems.Clear();
+		bool bSetEmpty = true;
+
+		for(int i_Item = 0; i_Item < items.size(); i_Item++)
+		{
+			if(std::find(alreadyChosenItems.begin(), alreadyChosenItems.end(), i_Item) == alreadyChosenItems.end())
+			{
+				choiceItems += items[i_Item] + SG_T("|");
+				if(i_Item == choosenItemNum) bSetEmpty = false;
+			}
+		}
+
+		pChoice->Set_Items(choiceItems);
+
+		bSetEmpty?pChoice->CSG_Parameter_Int::Set_Value(0):pChoice->Set_Value((SG_Char*)(items[choosenItemNum].c_str()));
+
+		if(choosenItemNum != 0) alreadyChosenItems.push_back(choosenItemNum);
+	    }
+	}
 }
 
-//---------------------------------------------------------
-bool CWMS_XmlHandlers::_Get_Child_Content(wxXmlNode *pNode, wxString &Value, const wxString &Name)
+std::vector<CWMS_Projection> CWMS_Import::_Proj_Intersect(const std::vector<CWMS_Layer*> & layers)
 {
-	if( (pNode = _Get_Child(pNode, Name)) != NULL )
+	//-------------------------JOINT PROJECTIONS FOR SELECTED LAYERS---------------------------//
+
+    	CWMS_Projection proj;
+	std::vector<CWMS_Projection> projs;
+	std::vector<wxXmlNode *> intersProjs, intersProjsTemp, intersBboxes, layerProjs;
+
+	if(layers.size() > 0)
 	{
-		Value	= pNode->GetNodeContent();
-
-		return( true );
+		   intersProjs = layers[0]->getElms(m_WMS->m_Capabilities.m_ProjTag);
 	}
 
-	return( false );
-}
 
-//---------------------------------------------------------
-bool CWMS_XmlHandlers::_Get_Child_Content(wxXmlNode *pNode, int &Value, const wxString &Name)
-{
-	long	lValue;
-
-	if( (pNode = _Get_Child(pNode, Name)) != NULL && pNode->GetNodeContent().ToLong(&lValue) )
+	for(int i_Layer = 1; i_Layer < layers.size(); i_Layer++)
 	{
-		Value	= lValue;
+		intersProjsTemp.clear();
+		layerProjs = layers[i_Layer]->getElms(m_WMS->m_Capabilities.m_ProjTag);
 
-		return( true );
+		for(int i_LayerProj = 0; i_LayerProj < layerProjs.size(); i_LayerProj++ )
+		{
+			bool isInside = false;
+			for(int i_InterProj = 0; i_InterProj < intersProjs.size(); i_InterProj++ )
+			{
+				if(!layerProjs[i_LayerProj]->GetNodeContent().Cmp(intersProjs[i_InterProj]->GetNodeContent()))
+				{
+					isInside = true;
+					break;
+				}
+			}
+			if(isInside) intersProjsTemp.push_back(layerProjs[i_LayerProj]);
+		}
+		intersProjs = intersProjsTemp;
 	}
 
-	return( false );
-}
-
-//---------------------------------------------------------
-bool CWMS_XmlHandlers::_Get_Child_Content(wxXmlNode *pNode, double &Value, const wxString &Name)
-{
-	double	dValue;
-
-	if( (pNode = _Get_Child(pNode, Name)) != NULL && pNode->GetNodeContent().ToDouble(&dValue) )
+	for(int i_Proj = 0; i_Proj < intersProjs.size(); i_Proj++ )
 	{
-		Value	= dValue;
+		if(intersProjs[i_Proj]->GetNodeContent().IsEmpty()) continue;
+		proj.m_Projection = intersProjs[i_Proj]->GetNodeContent();
+		projs.push_back(proj);
 
-		return( true );
 	}
 
-	return( false );
-}
+	//-------------------------SERCH OF BBOX FOR EVERY PROJECTION---------------------------//
 
-//---------------------------------------------------------
-bool CWMS_XmlHandlers::_Get_Node_PropVal(wxXmlNode *pNode, wxString &Value, const wxString &Property)
-{
-	wxString	PropVal;
+	std::vector<wxXmlNode *> layerBboxes;
 
-	if( pNode != NULL && pNode->GetPropVal(Property, &PropVal) )
+	for(int i_Proj = 0; i_Proj < projs.size(); i_Proj++)
 	{
-		Value	= PropVal;
+		for(int i_Layer = 0; i_Layer < layers.size(); i_Layer++)
+		{
+			layerBboxes = layers[i_Layer]->getElms(wxT("BoundingBox"));
 
-		return( true );
+			for(int i_Bbox = 0; i_Bbox < layerBboxes.size(); i_Bbox++ )
+			{
+				wxString s;
+				if(!layerBboxes[i_Bbox]->GetPropVal(m_WMS->m_Capabilities.m_ProjTag, &s))
+					continue;
+				if(s.CmpNoCase(projs[i_Proj].m_Projection))
+					continue;
+
+				if(layerBboxes[i_Bbox]->GetPropVal(wxT("minx"), &s))
+					s.ToDouble(&projs[i_Proj].m_GeoBBox.xMin);
+				if(layerBboxes[i_Bbox]->GetPropVal(wxT("miny"), &s))
+					s.ToDouble(&projs[i_Proj].m_GeoBBox.yMin);
+				if(layerBboxes[i_Bbox]->GetPropVal(wxT("maxx"), &s))
+					s.ToDouble(&projs[i_Proj].m_GeoBBox.xMax);
+				if(layerBboxes[i_Bbox]->GetPropVal(wxT("maxy"), &s))
+					s.ToDouble(&projs[i_Proj].m_GeoBBox.yMax);
+		     }
+		}
 	}
-
-	return( false );
+	return projs;
 }
 
-bool CWMS_XmlHandlers::_Get_Child_PropVal(wxXmlNode *pNode, wxString &Value, const wxString &Name, const wxString &Property)
+
+bool	CWMS_Import::_Import_Map(const wxString & tempMapPath)
 {
-	return( (pNode = _Get_Child(pNode, Name)) != NULL && _Get_Node_PropVal(pNode, Value, Property) );
+
+	    wxImage	Image;
+	    if( Image.LoadFile(tempMapPath) == false )
+	    {
+		Message_Add(_TL("Unamble to load file with fetched data."));
+		return false;
+
+	    }
+
+	    else
+	    {
+		    CSG_Grid	*pGrid	= SG_Create_Grid(SG_DATATYPE_Int, Image.GetWidth(), Image.GetHeight(), 1, m_WMS->m_BBox.xMin, m_WMS->m_BBox.yMin);
+
+		    for(int y=0, yy=pGrid->Get_NY()-1; y<pGrid->Get_NY(); y++, yy--)
+		    {
+			    for(int x=0; x<pGrid->Get_NX(); x++)
+			    {
+				    pGrid->Set_Value(x, y, SG_GET_RGB(Image.GetRed(x, yy), Image.GetGreen(x, yy), Image.GetBlue(x, yy)));
+
+				    if (!Image.GetAlpha(x, yy))
+				    {
+					pGrid->Set_NoData(x, y );
+				    }
+			    }
+		    }
+
+		    CSG_String gridName =  _Get_Layers_Existing_Name(m_WMS->m_Capabilities.m_RootLayer);
+		    pGrid->Set_Name(gridName);
+
+		    m_pOutputMap->Set_Value(pGrid);
+		    DataObject_Set_Colors(pGrid, 100, SG_COLORS_BLACK_WHITE);
+		    CSG_Parameters Parameters;
+
+		    if(DataObject_Get_Parameters(pGrid, Parameters) && Parameters("COLORS_TYPE") )
+		    {
+			    Parameters("COLORS_TYPE")->Set_Value(3);	// Color Classification Type: RGB
+			    DataObject_Set_Parameters(pGrid, Parameters);
+		    }
+		    if(!m_WMS->m_LayerProjDef.IsEmpty())pGrid->Get_Projection().Create((CSG_String) m_WMS->m_LayerProjDef, SG_PROJ_FMT_Proj4);
+
+	}
+	wxRemoveFile(tempMapPath);
+	return true;
 }

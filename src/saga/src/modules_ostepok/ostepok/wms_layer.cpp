@@ -1,17 +1,9 @@
 #include "wms_import.h"
-#include <wx/xml/xml.h>
 
 
 CWMS_Layer::CWMS_Layer(void)
 {
 	m_pParrentLayer = NULL;
-	m_Opaque	= false;
-	m_Querryable	= false;
-	no_Subsets	= false;
-	m_Cascaded	= 0;
-	m_fixedWidth	= 0;
-	m_fixedHeight	= 0;
-
 }
 
 CWMS_Layer::~CWMS_Layer(void)
@@ -22,172 +14,169 @@ CWMS_Layer::~CWMS_Layer(void)
 
 void CWMS_Layer::_Delete_Child_Layers(void)
 {
-// removes layers recursively
-	for(int i=0; i < m_LayerChildren.size(); i++)
+//removes layers recursively
+	for(int i=0; i < m_ChildLayers.size(); i++)
 	{
-		delete(m_LayerChildren[i]);
+		delete(m_ChildLayers[i]);
 	}
 }
 
-void	CWMS_Layer::Create ( wxXmlNode * pLayerNode, CWMS_Layer * pParrentLayer, const int layerId, wxString m_ProjTag)
+void	CWMS_Layer::Create (wxXmlNode * pLayerNode, CWMS_Layer * pParrentLayer, const int layerId, CWMS_XmlHandlers * pXmlH, wxString projTag)
 {
-// parses layer attributes
-	if(pParrentLayer == NULL)
-	{
-		m_pParrentLayer = NULL;
-	}
-
-	else
-	{
-		// connecting the layer with parrent layer and oposite
-		m_pParrentLayer = pParrentLayer;
-		pParrentLayer->m_LayerChildren.push_back(this);
-
-		//attributes which are inherited from parrent layer
-		Assign_Projs(pParrentLayer->Get_Projections());
-		Assign_Styles(pParrentLayer->Get_Styles());
-		m_MaxScaleD = pParrentLayer->m_MaxScaleD;
-		m_MinScaleD = pParrentLayer->m_MinScaleD;
-	}
 
 	m_id = layerId;
+	m_pParrentLayer = pParrentLayer;
+	m_pXmlH = pXmlH;
+	m_ProjTag = projTag;
+	m_pLayerNode = pLayerNode;
 
-	// getting values from GetCapabilities response
-	CWMS_XmlHandlers::_Get_Child_Content(pLayerNode, m_Name, wxT("Name"));
-	CWMS_XmlHandlers::_Get_Child_Content(pLayerNode, m_Title, wxT("Title"));
-	CWMS_XmlHandlers::_Get_Child_Content(pLayerNode, m_Abstract, wxT("Abstract"));
-	CWMS_XmlHandlers::_Get_Child_Content(pLayerNode, m_MaxScaleD, wxT("MaxScaleDenomminator"));
-	CWMS_XmlHandlers::_Get_Child_Content(pLayerNode, m_MinScaleD, wxT("MinScaleDenomminator"));
+	// Solving inheritence in GetCapabilities response according to WMS standard //
 
-	wxString propVal;
-	CWMS_XmlHandlers::_Get_Node_PropVal(pLayerNode, propVal, wxT("queryalbe"));
-	if(propVal == wxT("1")) m_Querryable = false;
-	propVal.Clear();
 
-	CWMS_XmlHandlers::_Get_Node_PropVal(pLayerNode, propVal, wxT("opaque"));
-	if(propVal == wxT("1")) m_Opaque = false;
-	propVal.Clear();
+	// Simple inheritance of tags. If not present in <Layer>, inherited from parent layer if is present. Except <Attribution>, which is always added.
+	wxArrayString inhElms;
+	inhElms.Add(wxString(wxT("EX_GeographicBoundingBox")));
+	inhElms.Add(wxString(wxT("Attribution")));
+	inhElms.Add(wxString(wxT("MinScaleDenominator")));
+	inhElms.Add(wxString(wxT("MaxScaleDenominator")));
+	inhElms.Add(wxString(wxT("AuthorityURL")));
 
-	CWMS_XmlHandlers::_Get_Node_PropVal(pLayerNode, propVal, wxT("noSubsets"));
-	if(propVal == wxT("1")) m_Querryable = false;
-	propVal.Clear();
-
-	CWMS_XmlHandlers::_Get_Node_PropVal(pLayerNode, propVal, wxT("cascaded"));
-	if(propVal.Length() == 0)   propVal.ToLong((long*)&m_Cascaded);
-	propVal.Clear();
-
-	CWMS_XmlHandlers::_Get_Node_PropVal(pLayerNode, propVal, wxT("fixedWidth"));
-	if(propVal.Length() == 0)   propVal.ToLong((long*)&m_fixedWidth);
-	propVal.Clear();
-
-	CWMS_XmlHandlers::_Get_Node_PropVal(pLayerNode, propVal, wxT("fixedHeiht"));
-	if(propVal.Length() == 0)   propVal.ToLong((long*)&m_fixedHeight);
-	propVal.Clear();
-
-	wxXmlNode   *pChild;
-	if( (pChild = CWMS_XmlHandlers::_Get_Child(pLayerNode,wxT("KeywordList"))) != NULL )
+	std::vector<wxXmlNode *> nodes;
+	std::vector<wxXmlNode *> parent_nodes;
+	for (int i_Elm = 0; i_Elm < inhElms.Count(); i_Elm++)
 	{
-		m_KeywordList = CWMS_XmlHandlers::_Get_Children_Content(pChild, wxT("keyword"));
+		nodes = m_pXmlH->Get_Children(m_pLayerNode, inhElms[i_Elm]);
+		if((nodes.size() == 0 || !inhElms[i_Elm].Cmp(wxT("Attribution"))) && m_pParrentLayer)
+		{
+			parent_nodes =m_pXmlH->Get_Children(m_pParrentLayer->m_pLayerNode, inhElms[i_Elm]);
+			nodes.insert(nodes.end(), parent_nodes.begin(), parent_nodes.end());
+		}
+		m_LayerElms.insert(std::make_pair(inhElms[i_Elm], nodes));
 	}
 
-	m_Dimensions = CWMS_XmlHandlers::_Get_Children_Content(pLayerNode,wxT("dimension"));
+	//inheritance of attributes of <Layer> tag. If attribute is not present in <Layer>, inherited from parent layer if is present.
+	std::vector<wxString> inhAttribs;
+	inhAttribs.push_back(wxString(wxT("queryable")));
+	inhAttribs.push_back(wxString(wxT("cascaded")));
+	inhAttribs.push_back(wxString(wxT("opaque")));
+	inhAttribs.push_back(wxString(wxT("noSubsets")));
+	inhAttribs.push_back(wxString(wxT("fixedWidth")));
+	inhAttribs.push_back(wxString(wxT("fixedHeight")));
 
-	pChild = pLayerNode->GetChildren();
-	do
+	wxString attrValue;
+	for (int i_Attr = 0; i_Attr < inhAttribs.size(); i_Attr++)
 	{
-		if( !pChild->GetName().CmpNoCase( wxT("Style") ) )
+		if(!m_pParrentLayer) break;
+		if(!m_pLayerNode->HasProp(inhAttribs[i_Attr]) &&
+		    m_pParrentLayer->m_pLayerNode->GetPropVal(inhAttribs[i_Attr], &attrValue))
 		{
-		    Add_Style(pChild);
-		}
-
-		if( !pChild->GetName().CmpNoCase( m_ProjTag ) )
-		{
-		    Add_Proj(pChild);
-		}
-
-	}
-	while( (pChild = pChild->GetNext()) != NULL );
-
-	pChild = pLayerNode->GetChildren();
-	do
-	{
-		if( !pChild->GetName().CmpNoCase( wxT("BoundingBox") ) )
-		{
-		    Add_GeoBBox(pChild, m_ProjTag );
-		}
-
-	}
-	while( (pChild = pChild->GetNext()) != NULL );
-}
-
-
-void CWMS_Layer::Add_Style ( wxXmlNode * pStyleNode)
-{
-//checks if the style is not already inherited
-	bool bStyleExists = false;
-	wxString insertedStyleName;
-
-	for(int i_style = 0; i_style < m_Styles.size(); i_style++)
-	{
-		CWMS_XmlHandlers::_Get_Child_Content(pStyleNode, insertedStyleName, wxT("Name"));
-		if( m_Styles[i_style].m_Name.CmpNoCase(insertedStyleName) == 0)
-		{
-			bStyleExists = true;
-			break;
+			m_pLayerNode->AddAttribute(inhAttribs[i_Attr], attrValue);
 		}
 	}
 
-	if(!bStyleExists)
+	// tags which are checked if already tag with checked parameter (element_content, it`s attribute  or child_element_content)
+	// is present in layer. If the tag with parameter is not in the layer it is inherited from parent layer
+
+	_inhNotSameElement(m_ProjTag, wxT("element_content"), inhElms);
+	_inhNotSameElement(wxT("BoundingBox"), wxT("attribute"), inhElms, m_ProjTag);
+	_inhNotSameElement(wxT("Style"), wxT("child_element_content"), inhElms, wxT("Name"));
+	_inhNotSameElement(wxT("Dimension"), wxT("attribute"), inhElms, wxT("name"));
+
+	// in order to map m_LayerElements contain all nodes of Layer tag, missing not inherited elements are added
+
+	wxString elem;
+	std::vector<wxXmlNode *> newVect;
+	nodes = m_pXmlH->Get_Children(m_pLayerNode);
+
+	for (int i_NodeElem = 0; i_NodeElem < nodes.size(); i_NodeElem++)
 	{
-		CWMS_Style style;
-		CWMS_XmlHandlers::_Get_Child_Content(pStyleNode, style.m_Name, wxT("Name"));
-		CWMS_XmlHandlers::_Get_Child_Content(pStyleNode, style.m_Title, wxT("Title"));
-		m_Styles.push_back(style);
+		elem = nodes[i_NodeElem]->GetName();
+		if(inhElms.Index(elem) != wxNOT_FOUND) continue;
+
+		std::map<wxString, std::vector<wxXmlNode *> >::iterator it = m_LayerElms.find(elem);
+		if (it != m_LayerElms.end())
+		{
+			it->second.push_back(nodes[i_NodeElem]);
+		}
+		else
+		{
+			newVect.clear();
+			newVect.push_back(nodes[i_NodeElem]);
+			m_LayerElms.insert(std::make_pair(elem, newVect));
+		}
 	}
 }
 
-
-void CWMS_Layer::Add_Proj ( wxXmlNode * pProjNode)
+void	CWMS_Layer::_inhNotSameElement (const wxString & elmName, const wxString & cmpType, wxArrayString & inhElems, const wxString & addArg)
 {
-//checks if the projection is not already inherited
-	bool bProjExists = false;
-	for(int i_proj = 0; i_proj < m_Projections.size(); i_proj++)
+
+	std::vector<wxXmlNode *> nodes = m_pXmlH->Get_Children(m_pLayerNode, elmName);
+
+	std::vector<wxXmlNode *> parentNodes;
+	if(m_pParrentLayer)
 	{
-		if( m_Projections[i_proj].m_Projection.CmpNoCase(pProjNode->GetNodeContent()) == 0)
-		{
-			bProjExists = true;
-			break;
-		}
+		if( m_pParrentLayer->m_LayerElms.find(elmName) !=  m_pParrentLayer->m_LayerElms.end())
+			parentNodes = m_pParrentLayer->m_LayerElms[elmName];
 	}
 
-	if(!bProjExists)
+
+	wxXmlNode * pParentNode;
+	wxXmlNode * pNode;
+
+	wxString parentCmpText, cmpText;
+	for(int i_ParentNode = 0; i_ParentNode < parentNodes.size(); i_ParentNode++)
 	{
-		CWMS_Projection projection;
-		projection.m_Projection =  pProjNode->GetNodeContent();
-		m_Projections.push_back(projection);
-	}
-}
+		pParentNode = parentNodes[i_ParentNode];
+		parentCmpText.Empty();
+		if(!cmpType.Cmp(wxT("attribute")))
+			 pParentNode->GetPropVal(addArg, &parentCmpText);
 
+		else if(!cmpType.Cmp(wxT("element_content")))
+			parentCmpText = pParentNode->GetNodeContent();
 
-void CWMS_Layer::Add_GeoBBox ( wxXmlNode * pBboxNode, wxString projTag)
-{
-//appends bbox to corresponding projection
-	for(int i_proj = 0; i_proj < m_Projections.size(); i_proj++)
-	{
-		wxString	s;
-		CWMS_XmlHandlers::_Get_Node_PropVal(pBboxNode, s, projTag);
+		else if(!cmpType.Cmp(wxT("child_element_content")))
+			 m_pXmlH->Get_Child_PropVal(pParentNode, parentCmpText, elmName, addArg);
 
-		if( !m_Projections[i_proj].m_Projection.CmpNoCase(s))
+		if (parentCmpText.IsEmpty())
+			continue;
+
+		bool isThere  = false;
+
+		for(int i_Node = 0; i_Node < nodes.size(); i_Node++)
 		{
-			if(			!(CWMS_XmlHandlers::_Get_Node_PropVal(pBboxNode, s, wxT("minx")) && s.ToDouble(&m_Projections[i_proj].m_GeoBBox.xMin))
-					||	!(CWMS_XmlHandlers::_Get_Node_PropVal(pBboxNode, s, wxT("miny")) && s.ToDouble(&m_Projections[i_proj].m_GeoBBox.yMin))
-					||	!(CWMS_XmlHandlers::_Get_Node_PropVal(pBboxNode, s, wxT("maxx")) && s.ToDouble(&m_Projections[i_proj].m_GeoBBox.xMax))
-					||	!(CWMS_XmlHandlers::_Get_Node_PropVal(pBboxNode, s, wxT("maxy")) && s.ToDouble(&m_Projections[i_proj].m_GeoBBox.yMax)) )
+			pNode = nodes[i_Node];
+			cmpText.Empty();
+			if(!cmpType.Cmp(wxT("attribute")))
+				    pNode->GetPropVal(addArg, &cmpText);
+
+			else if(!cmpType.Cmp(wxT("element_content")))
+				cmpText = pNode->GetNodeContent();
+
+			else if(!cmpType.Cmp(wxT("child_element_content")))
+				m_pXmlH->Get_Child_PropVal(pNode, cmpText, elmName, addArg);
+
+			if(!cmpText.CmpNoCase(parentCmpText))
 			{
-				m_Projections[i_proj].m_GeoBBox.xMin	= m_Projections[i_proj].m_GeoBBox.yMin	= m_Projections[i_proj].m_GeoBBox.xMax	= m_Projections[i_proj].m_GeoBBox.yMax	= 0.0;
+				isThere = true;
+				break;
 			}
 		}
+		if (!isThere)
+		{
+			nodes.push_back(pParentNode);
+		}
 	}
+
+	m_LayerElms.insert(std::make_pair(elmName, nodes));
+	inhElems.Add(elmName);
 }
 
+std::vector<wxXmlNode *> CWMS_Layer::getElms (const wxString & elementsName)
+{
+	std::vector<wxXmlNode *> elms;
 
+	if (m_LayerElms.find(elementsName) != m_LayerElms.end())
+		    elms = m_LayerElms.find(elementsName)->second;
+
+	return elms;
+}

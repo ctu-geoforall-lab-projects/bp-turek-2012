@@ -1,6 +1,3 @@
-/**********************************************************
- * Version $Id: table.cpp 911 2011-02-14 16:38:15Z reklov_w $
- *********************************************************/
 
 ///////////////////////////////////////////////////////////
 //                                                       //
@@ -9,14 +6,15 @@
 //      System for Automated Geoscientific Analyses      //
 //                                                       //
 //                    Module Library:                    //
-//                   garden_webservices                  //
+//                    lib_webservices                    //
 //                                                       //
 //-------------------------------------------------------//
 //                                                       //
 //                      wms_import.h                     //
 //                                                       //
-//                 Copyright (C) 2011 by                 //
-//                      Olaf Conrad                      //
+//                 Copyright (C) 2012 by                 //
+//			Stepan Turek                     //
+//                 based on Olaf Conrad's code           //
 //                                                       //
 //-------------------------------------------------------//
 //                                                       //
@@ -40,198 +38,300 @@
 //                                                       //
 //-------------------------------------------------------//
 //                                                       //
-//    e-mail:     oconrad@saga-gis.org                   //
+//    e-mail:     stepan.turek@seznam.cz                 //
 //                                                       //
-//    contact:    Olaf Conrad                            //
-//                Institute of Geography                 //
-//                University of Hamburg                  //
-//                Germany                                //
 //                                                       //
 ///////////////////////////////////////////////////////////
 
 //---------------------------------------------------------
 
 
-///////////////////////////////////////////////////////////
-//														 //
-//														 //
-//														 //
-///////////////////////////////////////////////////////////
-
-//---------------------------------------------------------
 #ifndef HEADER_INCLUDED__WMS_Import_H
 #define HEADER_INCLUDED__WMS_Import_H
 
-
-///////////////////////////////////////////////////////////
-//														 //
-//														 //
-//														 //
-///////////////////////////////////////////////////////////
-
-//---------------------------------------------------------
-
-#include <gdal.h>
-
 #include "MLB_Interface.h"
-#include <vector>
-#include <list>
 
-#include "wms_import.h"
+#include <map>
+#include <vector>
 #include <stdexcept>
 
-#include <wx/protocol/http.h>
 #include <wx/string.h>
-
-///////////////////////////////////////////////////////////
-//														 //
-//														 //
-//														 //
-///////////////////////////////////////////////////////////
+#include <wx/xml/xml.h>
+#include <wx/protocol/http.h>
 
 
 class CWMS_Layer;
-class CWMS_Style;
 class CWMS_XmlHandlers;
-class CWMS_WMS_Base;
-class CWMS_WMS_Gdal_drv;
+class CWMS_Base;
+class CWMS_Gdal_drv;
 class CWMS_Projection;
 
-
-
-
- class WMS_Exception : public std::runtime_error
+ //! Exception class used for reporting of errors in CWMS_WMS_Base class and its members
+ class CWMS_Exception : public std::runtime_error
  {
  public:
 
-     WMS_Exception(const wxString& msg = wxT("Exception not specified")) :  runtime_error( std::string(msg.mb_str())) {}
+     CWMS_Exception(const wxString& msg = wxT("Exception not specified")) :  runtime_error( std::string(msg.mb_str())) {}
  };
 
 
+
+ //! Class of the module
 class CWMS_Import : public CSG_Module
 {
 public:
-	friend class CWMS_WMS_Base;
 
-	friend class CWMS_WMS_Gdal_drv;//TODO
-
+	/*!
+	Constructor creates the first dialog
+	*/
 	CWMS_Import(void);
 
 	virtual ~CWMS_Import();
 
 protected:
 
-	CWMS_WMS_Base *				m_WMS;
 
-	bool					Create_Layers_Dialog	(std::vector<CWMS_Layer*> layers, CSG_Parameters & parLayers);
+	CWMS_Base *				m_WMS;/*!< holds reference to CWMS_WMS_Base class which is used for creating of WMS request and communication with WMS server*/
 
-	bool					Create_Settings_Dialog	(std::vector<CWMS_Layer*> selectedLayers, CSG_Parameters & parSettings);
+	CSG_Parameter *				m_pOutputMap;
 
-	static int				_On_Proj_Changed	(CSG_Parameter *pParameter, int Flags);
-
+	//! Main method of the module, which is called when modul is executed
+	/*!
+	The method creates instance of CWMS_WMS_Base (m_WMS) and then fetches capabilities file with m_Capapilities member of m_WMS, shows two dialogs _Create_Layers_Dialog
+	and _Create_Settings_Dialog and then get chosen information from the dialogs in order to be able to fetch data from WMS server with Get_Map method of m_WMS.
+	The data are imported into SAGA with _ImportMap method.
+	*/
 	virtual bool				On_Execute		(void);
 
+	//! Creates data for dialog with layer tree.
+	/*!
+	\param layers vector with layers for the tree.
+	\param parLayers paremeter object, where the tree will be stored
+	*/
+	bool					_Create_Layers_Dialog	(const std::vector<CWMS_Layer*> & layers, CSG_Parameters & parLayers);
+
+	//! Creates data for dialog with other WMS request settings.
+	/*!
+	\param layers vector with layers for the tree.
+	\param parLayers paremeter object, where will be stored data for callbackfunction _Settings_Dial_Callback and return parametrs to show in dialog.
+	\returns parameters which will be show in dialog
+	*/
+	CSG_Parameters *			_Create_Settings_Dialog	(const std::vector<CWMS_Layer*> & selectedLayers, CSG_Parameters & parSettings);
+
+	//! Imports GRID to SAGA from file image.
+	/*!
+	\param tempMapPath path to image file for import
+	\returns true if import was successful
+	*/
+	bool					_Import_Map		(const wxString & tempMapPath);
+
+	//! Finds all joint projections for layers.
+	/*!
+	\returns vector of CWMS_Projection objects. In CWMS_Projection is stored projection and corresponding bounding box.
+	*/
+	std::vector<CWMS_Projection>		_Proj_Intersect		(const std::vector<CWMS_Layer*> & layers  );
+
+	//!	   Changes boundix box values according to chosen projection and layers in layer order selects.
+	static int				_Settings_Dial_Callback	(CSG_Parameter * pParameter, int Flags);
+
+	/*!
+	\returns layer title, if it is empty then returns layer name and if name is also empty returns layer id
+	*/
+	CSG_String				_Get_Layers_Existing_Name(CWMS_Layer * pLayer);
 };
 
-class CWMS_Capabilities;
 
+//! Unites helper function for handling wxXmlNodes
+class CWMS_XmlHandlers
+{
+public:
+	/*!
+	\return all children of pNode in vector.
+	*/
+	std::vector<wxXmlNode *>	Get_Children		(wxXmlNode * pNode);
+
+	/*!
+	\return children of pNode in vector which have tag name same as Name.
+	*/
+	std::vector<wxXmlNode *>	Get_Children		(wxXmlNode * pNode, const wxString &Name);
+
+	/*!
+	\return first found child of pNode which has tag name same as Name.
+	*/
+	wxXmlNode *			Get_Child		(wxXmlNode *pNode, const wxString &Name);
+
+	/*!
+	\param Value will contain content of first found child of pNode  which has tag name same as Name and will return true.
+	\return  false if child is not found and \param Value will not be changed.
+	*/
+	bool				Get_Child_Content	(wxXmlNode *pNode, wxString & Value, const wxString &Name);
+
+	 /*!
+	Value will contain int value in content of first found child of pNode  which has tag name same as Name and will return true.
+	\return  false if child is not found or it's content cannot be converted to int and Value is not changed in this case.
+	*/
+	bool				Get_Child_Content	(wxXmlNode *pNode, int & Value, const wxString &Name);
+
+	/*!
+	Value will contain int value in content of first found child of pNode  which has tag name same as Name and will return true.
+	\return  false if child is not found or it's content cannot be converted to double and Value and Value is not changed in this case.
+	*/
+	bool				Get_Child_Content	(wxXmlNode *pNode, double & Value, const wxString &Name);
+
+	/*!
+	Value will contain attribute Property value of first found child of pNode  which has tag name same as Name and will return true.
+	\return false if child or child's attribute are not found and Value is not changed in this case.
+	*/
+	bool				Get_Child_PropVal	(wxXmlNode *pNode, wxString & Value, const wxString &Name, const wxString &Property);
+
+	/*!
+	\return contents of children of pNode in vector which have tag name same as children_name.
+	*/
+	std::vector<wxString>		Get_Children_Content	(wxXmlNode *pNode, const wxString &children_name);
+};
+
+
+
+
+//! Downloades Capabilities file from WMS server and parses it into own data structure
 class CWMS_Capabilities
 {
 public:
+
 	CWMS_Capabilities(void);
 
-	CWMS_Capabilities(CWMS_WMS_Base * pParrentWMS);
+	//! Calls _Reset method
+	/*!
+	   \sa _Reset()
+	*/
+	~CWMS_Capabilities(void);
 
-	virtual ~CWMS_Capabilities(void);
+	wxString			m_Version;/*!< holds value of WMS version*/
 
+	wxString			m_ProjTag; /*!< holds value CRS (v. => 1.3.0) or SRS (v. <= 1.1.0.), depends on  WMS version got from GetCap file*/
 
-	void				Create			(CWMS_WMS_Base * pParrentWMS);
+	CWMS_XmlHandlers                m_XmlH; /*!< CWMS_XmlHandlers object, which is used also by tree of CWMS_Layer (in layers there is stored pointer to this object) */
 
-	wxString			Get_Summary		(void);
+	wxXmlNode *			m_pCapNode; /*!< Contains whole <Capability> node*/
 
-	wxHTTP				m_Server;
+	wxXmlNode *			m_pServiceNode; /*!< Contains whole <Service> node*/
 
-	int				m_MaxLayers, m_MaxWidth, m_MaxHeight;//TODO max constaints
+	CWMS_Layer *			m_RootLayer; /*!<  Contains whole <Layer> tree*/
 
-	wxString			m_Name, m_Title, m_Abstract, m_Online, m_Contact, m_Fees, m_Access, m_Formats, m_ProjTag, m_Version;
+	//! Sends GetCapabilities request to WMS server, fetch response, and calls \param _InitializeCapabilities method.
+	/*!
+	    \param serverUrl URL adress of WM_Create_Settings_DialogS server
+	    \param userName  username, if it is required by server
+	    \param password  password, if it is required by server
+	*/
+	void				Create			(const wxString & serverUrl, const wxString & userName, const wxString & password);
 
-	std::vector<wxString>		m_Keywords;
-
-	CWMS_Layer			*m_RootLayer;
-
-	CWMS_WMS_Base *			m_ParrentWMS;
-
-	std::vector<wxString>		Proj_Intersect		(std::vector<CWMS_Layer* > & layers );
-
+	//!  \param layers will containt all layers in tree. \param layer must be left empty, it is used for recursive calling of the method
 	void				Get_Layers		(std::vector<CWMS_Layer* > & layers, CWMS_Layer * layer = NULL);
 
-private:
+protected:
 
-	void				_Get_Capabilities	(class wxXmlNode *pRoot);
+	wxXmlDocument			m_XmlTree; /*!< Contains whole parsed GetCapabilities XML file*/
 
+	//! Parses WMS XML file pRoot then  calls _InitializeLayerTree function for parsing of <Layer> tag
+	void				_InitializeCapabilities	(class wxXmlNode *pRoot);
+
+	//! Removes CWMS_Layer tree recursively with delete statement
 	void				_Reset			(void);
 
-	void                            _Load_Layers		(class wxXmlNode *pNode, int & layer_id  ,CWMS_Layer *parrent_layer = NULL, int nDepth = 0);
-
-
+	//! Recursive function, which initializes all layers in GetCapabilities file
+	/*!
+	    \param pNode node with <Layer> tag
+	    \param layer_id  id of initialized layer
+	    \param parrent_layer  For root <Layer> is null, because it does not have any parent
+	    \param nDepth level of depth in the tree
+	*/
+	CWMS_Layer *                    _InitializeLayerTree	(class wxXmlNode * pLayerNode, int & layerId  ,CWMS_Layer * pParrentLayer = NULL, int nDepth = 0);
 };
 
 
-
-class CWMS_WMS_Base
+//! Abstract class, which cumunicates with WMS server (supports GetCapabilities and GetMap requests)
+/*!
+  Information from GetCapabilities response are stored in m_Capabilities object.
+  Class members store chosen values of parameters for GetMap request.
+*/
+class CWMS_Base
 {
 public:
 
-	CWMS_WMS_Base(void);
+	CWMS_Base(void);
 
-	virtual ~CWMS_WMS_Base(void);
+	virtual ~CWMS_Base(void);
 
-	CWMS_Capabilities			m_Capabilities;
+	CWMS_Capabilities			m_Capabilities;/*!< holds value of WMS version*/
+
+	//Values for GetMap Request
+	TSG_Rect				m_BBox, wmsReqBBox;
 
 	bool					m_bReProj, m_bReProjBbox, m_bTransparent;
 
 	int					m_sizeX, m_sizeY, m_blockSizeX, m_blockSizeY, m_ReProjMethod;
 
-	wxString				m_Proj, m_Format, m_Layers, m_Styles, m_ServerUrl, m_ReProj, m_TempDir;
+	wxString				m_Proj, m_Format, m_Layers, m_Styles, m_ServerUrl, m_ReProj, m_LayerProjDef;
 
-	TSG_Rect				m_BBox, wmsReqBBox;
-
-	CWMS_Import *				modul;//TODO realy needed????, nejlepsi asi dat do CWMS Import
-
-	CSG_Parameter *				m_pOutputMap;
-
-	void					Get_Map			(void);
+	//! Method which downloads data from WMS server according to values of class members and members in m_Capabilities
+	/*!
+	  Information from GetCapabilities response are stored in m_Capabilities object.
+	  Class members store chosen values of parameters for GetMap request.
+	  \return path to file with downloaded data
+	*/
+	wxString				Get_Map			(void);
 
 protected:
 
+	//! Abstract method, which sends GetMap request to WMS server and fetches response into file
+	/*!
+	  \return path to file with downloaded raster
+	*/
 	virtual wxString			_Download		(void) = 0;
 
+	//! If bounding box has to be reprojected to coordinate system of WMS request, this method reprojects it
+	/*!
+	If it is needed destination bbox points are transformed into wms projection and then bbox is created
+	from extreme coordinates of the transformed points (m_ReProj -> m_Proj
+	\return reprojected bbox
+	*/
 	TSG_Rect				_ComputeBbox		(void);
 
-	void					_CreateOutputMap	(wxString & tempMapPath );
-
-	wxString				_CreateGdalDrvXml	(void);
-
-	 wxString				_GdalWarp		(  wxString & tempMapPath );
+	//! Reprojection of raster into demanded projection (m_Proj -> m_ReProj) with m_ReProjMethod method modified code from http://www.gdal.org/warptut.html
+	/*!
+	  \return path to file with reprojected raster
+	*/
+	wxString				_GdalWarp		(const  wxString & tempMapPath);
 
 };
 
-class CWMS_WMS_Gdal_drv : public CWMS_WMS_Base
+
+//! Implements GDAL driver for GetMap request
+class CWMS_Gdal_drv : public CWMS_Base
 {
 
 public:
 
-	CWMS_WMS_Gdal_drv(): CWMS_WMS_Base() {}
+	CWMS_Gdal_drv(): CWMS_Base() {}
 
 private:
 
+	//! Downloads raster with GetMap request using GDAL driver
+	/*!
+	  \return path to downloaded raster file
+	*/
 	wxString				_Download		(void);
 
+	//! Creates XML file in format for GDAL driver 	with parameters for GetMap request
+	/*!
+	  \return path to XML file
+	*/
 	wxString				_CreateGdalDrvXml	(void);
 };
 
 
-
+//! It is one node of layer tree structure, which is created by getCapabilities Create() method
 class CWMS_Layer
 {
 public:
@@ -242,55 +342,60 @@ public:
 
 	void _Delete_Child_Layers(void);
 
+	CWMS_Layer *                            m_pParrentLayer;
 
-	wxString				m_Name, m_Title, m_Abstract, m_Version;
+	std::vector<CWMS_Layer* >		m_ChildLayers;
 
-	std::vector<wxString>			m_Dimensions, m_KeywordList;
+	int	                                m_id;
 
-	int					m_MaxScaleD, m_MinScaleD, m_id, m_Cascaded, m_fixedWidth, m_fixedHeight;
+	//! adds layer into layer tree
+	/*!
+	   Inititalizes m_pParrentLayer, m_ChildLayers, m_id and get all inherited features from parent layer.
+	*/
+	void					Create			(wxXmlNode * pNode, CWMS_Layer * pParrentLayer, const int layer_id, CWMS_XmlHandlers * xmlH, wxString m_ProjTag);
 
-	bool					m_Opaque, m_Querryable, no_Subsets;
-
-	std::vector<class CWMS_Layer* >		 m_LayerChildren;
-
-	CWMS_Layer				*m_pParrentLayer;
-
-
-
-	void					Add_Style	(wxXmlNode * pProjNode);
-
-	void					Add_Proj	(wxXmlNode * pProjNode);
-
-	void					Add_GeoBBox	(wxXmlNode * pBboxNode, wxString projTag);
+	/*!
+	  \return  vector from m_LayerElms map item, which has key same as  elementsName. Returns empty vector if elementsName is not found in map.
+	*/
+	std::vector<wxXmlNode *>		getElms (const wxString & elementsName);
 
 
-	void					Assign_Styles	(std::vector<class CWMS_Style> styles) {m_Styles = styles;}
-
-	void					Assign_Projs	(std::vector<class CWMS_Projection> projections) {m_Projections = projections;}
+protected:
 
 
-	std::vector<class CWMS_Style> &		Get_Styles	(void)	{return m_Styles;}
+	//! All nodes of <Layer> attribute are saved there, including inherited nodes.
+	/*!
+	  For outer access use getElms method.
+	*/
+	std::map<wxString, std::vector<wxXmlNode*> >m_LayerElms;
 
-	std::vector<class CWMS_Projection> &	Get_Projections	(void)	{return  m_Projections;}
+	wxXmlNode *                             m_pLayerNode;
+
+	wxString 				m_ProjTag;
+
+	CWMS_XmlHandlers *			m_pXmlH;
 
 
-	void					Create		(wxXmlNode * pNode, CWMS_Layer * pParrentLayer, const int layer_id, wxString m_ProjTag);
+	//! Checks if in m_pLayerNode is any child element, which has same value as inherited element from m_pParrentLayer
+	/*!
+	  Checked value depends on cmpType.
+	  \param elementName - name of checked elements. The checked elements are children of m_pLayerNode
+	  \param cmpType can hold this values: "attribute" - checked value is  node (elementName) attribute with name specified in addArg
+					       "element_content" - checked value is  content of element (elementName)
+					       "child_element_content" - checked value is  content of child element (specified in addArg)
+	  \param inhElems - vector with already inherited elements, method will add elementName there
 
-private:
-
-	std::vector<class CWMS_Style>           m_Styles;
-
-	std::vector<class CWMS_Projection>	m_Projections;
-
-
+	*/
+	void					_inhNotSameElement	(const wxString & elementName, const wxString & cmpType,
+									 wxArrayString & inhElems, const wxString & addArg = wxT(""));
 };
 
-
+//! Stores projection and corresponding bounding box
 class CWMS_Projection
 {
 public:
 
-	CWMS_Projection(void)		{m_Projection.Clear(); m_GeoBBox;}
+	CWMS_Projection(void)		{m_GeoBBox.xMax = m_GeoBBox.xMin = m_GeoBBox.yMax = m_GeoBBox.yMin = 0.0;}
 
 	virtual ~CWMS_Projection(void)	{}
 
@@ -299,38 +404,9 @@ public:
 	wxString			m_Projection;
 };
 
-class CWMS_Style
-{
-public:
-
-	CWMS_Style(void)		{}
-
-	virtual ~CWMS_Style(void)	{}
-
-	wxString			m_Title;
-
-	wxString			m_Name;
-};
 
 
-class CWMS_XmlHandlers
-{
-public:
 
-	static class wxXmlNode *		_Get_Child		(class wxXmlNode *pNode, const wxString &Name);
-
-	static bool				_Get_Child_Content	(class wxXmlNode *pNode, wxString &Value, const wxString &Name);
-
-	static bool				_Get_Child_Content	(class wxXmlNode *pNode, int        &Value, const wxString &Name);
-
-	static bool				_Get_Child_Content	(class wxXmlNode *pNode, double     &Value, const wxString &Name);
-
-	static bool				_Get_Node_PropVal	(class wxXmlNode *pNode, wxString &Value, const wxString &Property);
-
-	static bool				_Get_Child_PropVal	(class wxXmlNode *pNode, wxString &Value, const wxString &Name, const wxString &Property);
-
-	static std::vector<wxString>		_Get_Children_Content	(class wxXmlNode *pNode, const wxString &children_name);
-};
 
 
 #endif // #ifndef HEADER_INCLUDED__WMS_Import_H

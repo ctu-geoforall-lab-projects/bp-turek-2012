@@ -1,190 +1,136 @@
 #include "wms_import.h"
-#include <wx/xml/xml.h>
-
-
 
 CWMS_Capabilities::CWMS_Capabilities(void)
 {
-
-	_Reset();
+	m_RootLayer = NULL;
 }
 
+
 CWMS_Capabilities::~CWMS_Capabilities(void)
-{}
+{
+	_Reset();
+}
 
 void CWMS_Capabilities::_Reset(void)
 {
-	m_MaxLayers		= -1;
-	m_MaxWidth		= -1;
-	m_MaxHeight		= -1;
+	if(m_RootLayer)
+	{
+	    m_RootLayer->_Delete_Child_Layers();
+	    SG_Free(m_RootLayer);
+	}
 
-	m_Name			.Clear();
-	m_Title			.Clear();
-	m_Abstract		.Clear();
-	m_Online		.Clear();
-	m_Contact		.Clear();
-	m_Fees			.Clear();
-	m_Access		.Clear();
-	m_Formats		.Clear();
-	m_ProjTag		.Clear();
-	m_Version               .Clear();
-
-	m_Keywords		.clear();
-	m_Formats		.Clear();
-	m_RootLayer = 		NULL;
-
-	if(m_RootLayer) m_RootLayer->_Delete_Child_Layers();
-	SG_Free(m_RootLayer);
+	m_pCapNode = NULL;
+	m_pServiceNode = NULL;
+	m_Version.Clear();
+	m_ProjTag.Clear();
 }
 
-
-void CWMS_Capabilities::Create(CWMS_WMS_Base * pParrentWMS)
+void CWMS_Capabilities::Create(const wxString & serverUrl, const wxString & userName, const wxString & password)
 {
-//Send GetCapabilities request to WMS server, fetch response, and calls _GetCapabilities method.
 	_Reset();
+	wxHTTP server;
+	wxString serverUrlAdress = serverUrl.BeforeFirst(SG_T('/'));
+	server.SetUser(userName.c_str());
+	server.SetPassword(password.c_str());
 
-	m_ParrentWMS = pParrentWMS;
-
-	wxString	serverDirectory = wxT("/") + m_ParrentWMS->m_ServerUrl.AfterFirst(wxT('/'));
-	wxString	getCapRequest(serverDirectory);
-
-	getCapRequest	+= wxT("?SERVICE=WMS");
-	getCapRequest	+= wxT("&VERSION=1.1.1");
-	getCapRequest	+= wxT("&REQUEST=GetCapabilities");
-
-	//-------------------------------------------------
-	wxInputStream	*pStream;
-
-	if( (pStream = m_Server.GetInputStream(getCapRequest.c_str())) != NULL)
+	if(server.Connect(serverUrlAdress.c_str()) == false)
 	{
-		wxXmlDocument	Capabilities;
+		throw CWMS_Exception(wxT("ERROR: Unable to connect to server."));
+	}
 
-		if(Capabilities.Load(*pStream))
+
+    	wxString	serverDirectory = wxT("/") + serverUrl.AfterFirst(wxT('/'));
+    	wxString	getCapRequest(serverDirectory);
+
+    	getCapRequest	+= wxT("?SERVICE=WMS");
+    	getCapRequest	+= wxT("&VERSION=1.1.1");
+    	getCapRequest	+= wxT("&REQUEST=GetCapabilities");
+
+    	//-------------------------------------------------
+    	wxInputStream	*pStream;
+    	if( (pStream = server.GetInputStream(getCapRequest.c_str())) != NULL)
+    	{
+
+		if(!m_XmlTree.Load(*pStream))
 		{
-			// parsing GetCapabilities file into internal data structure
-			_Get_Capabilities(Capabilities.GetRoot());
+			throw CWMS_Exception(wxT("Unable to load and parse GetCapabilities xml document."));
 		}
-		else
-		{
-		    throw WMS_Exception(wxT("Unable to load and parse GetCapabilities xml document."));
-		}
-		delete(pStream);
-	}
-	else
-	{
-	    throw WMS_Exception(wxT("Unable to get input stream."));
-	}
+		_InitializeCapabilities(m_XmlTree.GetRoot());
+
+    	}
+    	else
+    	{
+		throw CWMS_Exception(wxT("Unable to get input stream."));
+    	}
 
 }
 
 
 
-void CWMS_Capabilities::_Get_Capabilities(wxXmlNode *pRoot)
+void CWMS_Capabilities::_InitializeCapabilities(wxXmlNode *pRoot)
 {
 //Parses servis tag and format in capabilities tag, then  calls _Load_Layers function
 
-	wxXmlNode	*pNode, *pChild;
+	wxXmlNode * pNodeRootLayer;
+	wxXmlNode * pNodeCap;
 
-	// 1. Parsing Service Tag
-	CWMS_XmlHandlers::_Get_Node_PropVal(pRoot, m_Version, wxT("version"));//TODO version warning?
+	if(!pRoot->GetPropVal(wxT("version"), &m_Version))
+	{
+		throw CWMS_Exception(wxT("Unable to find Version attribute in GetCapabilities root tag."));
+	}
 
 	if (!m_Version.Cmp(wxT("1.3.0")))	m_ProjTag = wxT("CRS");
 	else					m_ProjTag = wxT("SRS");
 
 
-	if( (pNode = CWMS_XmlHandlers::_Get_Child(pRoot, wxT("Service"))) == NULL)
+	m_pServiceNode =  m_XmlH.Get_Child(pRoot, wxT("Service"));
+	if(m_pServiceNode == NULL)
 	{
-	    throw WMS_Exception(wxT("Unable to find <Service> tag in GetCapabilities response file."));
+		throw CWMS_Exception(wxT("Unable to find <Service> tag in GetCapabilities response file."));
 	}
 
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Name		, wxT("Name"));//TODO cyklus
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Title		, wxT("Title"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Abstract		, wxT("Abstract"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Fees		, wxT("Fees"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_Access		, wxT("AccessConstraints"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_MaxLayers		, wxT("LayerLimit"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_MaxWidth		, wxT("MaxWidth"));
-	CWMS_XmlHandlers::_Get_Child_Content(pNode, m_MaxHeight		, wxT("MaxHeight"));
-	CWMS_XmlHandlers::_Get_Child_PropVal(pNode, m_Online		, wxT("OnlineResource"), wxT("xlink:href"));
-
-	if( (pChild = CWMS_XmlHandlers::_Get_Child(pNode, wxT("KeywordList"))) != NULL)
+	m_pCapNode = m_XmlH.Get_Child(pRoot, wxT("Capability"));
+	if(m_pCapNode == NULL)
 	{
-		m_Keywords = CWMS_XmlHandlers::_Get_Children_Content(pNode,wxT("keyword"));
-	}
-
-	if( (pChild = CWMS_XmlHandlers::_Get_Child(pNode, wxT("ContactInformation"))) != NULL)//TODO
-	{
-	}
-
-	// 2. Capabilities
-
-	if((pNode = CWMS_XmlHandlers::_Get_Child(pRoot, wxT("Capability"))) == NULL)
-	{
-		throw WMS_Exception(wxT("Unable to find <Capaility> tag in GetCapabilities response file."));;
+		throw CWMS_Exception(wxT("Unable to find <Capaility> tag in GetCapabilities response file."));;
 	}
 
 
-	// 2.a) Request
-
-	if( (pChild = CWMS_XmlHandlers::_Get_Child(CWMS_XmlHandlers::_Get_Child(CWMS_XmlHandlers::_Get_Child(pNode, wxT("Request")), wxT("GetMap")), wxT("Format"))) != NULL )//TODO 1.0
+	if((pNodeRootLayer = m_XmlH.Get_Child(m_pCapNode, wxT("Layer"))) == NULL)
 	{
-		do
-		{
-			if( !pChild->GetName().CmpNoCase(wxT("Format")) )
-			{
-				m_Formats	+= pChild->GetNodeContent().c_str();
-				m_Formats	+= wxT("|");
-			}
-		}
-		while( (pChild = pChild->GetNext()) != NULL );
-	}
-
-
-	// 2.b) Exception, Vendor Specific Capabilities, User Defined Symbolization, ...
-
-
-	// 2.c) Layers
-
-
-	if( (pNode = CWMS_XmlHandlers::_Get_Child(pNode, wxT("Layer"))) == NULL)
-	{
-	    throw WMS_Exception(wxT("Unanle to find any <Layer> tag in GetCapabilities response file."));
+		throw CWMS_Exception(wxT("Unanle to find any <Layer> tag in GetCapabilities response file."));
 	}
 
 	//Initial value of layer id, incremented when some layer is added.
 	int id = 0;
-
-	_Load_Layers(pNode, id);
+	_InitializeLayerTree(pNodeRootLayer, id);
 
 }
 
 
-void  CWMS_Capabilities:: _Load_Layers(class wxXmlNode *pLayerNode, int & layerId, CWMS_Layer *pParrentLayer, int nDepth)
-{    
+CWMS_Layer * CWMS_Capabilities::_InitializeLayerTree(class wxXmlNode *pLayerNode, int & layerId, CWMS_Layer *pParrentLayer, int nDepth)
+{
 //Recursive method, which goes down through layer tree, every call establishes new CWMS_Layer object and calls create method of the object to parse atttribites of layer
 
-	wxXmlNode   *pChild;
+	CWMS_Layer * pChildLayer;
+	CWMS_Layer * pLayer	= new CWMS_Layer;
 
-	CWMS_Layer	*pLayer	= new CWMS_Layer;
-	pLayer->Create(pLayerNode, pParrentLayer, layerId, m_ProjTag );
+	pLayer->Create(pLayerNode, pParrentLayer, layerId,  &m_XmlH, m_ProjTag );
 
 	if(nDepth == 0)
 	{
 		m_RootLayer = pLayer;
-
 	}
 	nDepth++;
 
-	pChild = pLayerNode->GetChildren();
-	do
+	std::vector<wxXmlNode *> children = m_XmlH.Get_Children(pLayerNode, wxT("Layer"));
+	for(int i_Child = 0; i_Child < children.size(); i_Child++)
 	{
-		if(!pChild->GetName().CmpNoCase(wxT("Layer")))
-		{
-
-			_Load_Layers(pChild, ++layerId,pLayer, nDepth);
-		}
+		pChildLayer = _InitializeLayerTree(children[i_Child], ++layerId, pLayer, nDepth);
+		pLayer->m_ChildLayers.push_back(pChildLayer);
 	}
-	while((pChild = pChild->GetNext()) != NULL);
+
+	return pLayer;
 }
 
 
@@ -196,55 +142,19 @@ void CWMS_Capabilities::Get_Layers(std::vector<CWMS_Layer*> & layers, CWMS_Layer
 	{
 		if(m_RootLayer)
 		{
-		    layer = m_RootLayer;
-		    layers.push_back(m_RootLayer);
+			layer = m_RootLayer;
+			layers.push_back(m_RootLayer);
 		}
 		else return;
 	}
-	for(int i = 0; i < layer->m_LayerChildren.size(); i++)
+
+	for(int i = 0; i < layer->m_ChildLayers.size(); i++)
 	{
-		layers.push_back( layer->m_LayerChildren[i] );
-		Get_Layers(layers, layer->m_LayerChildren[i]);
+		layers.push_back(layer->m_ChildLayers[i]);
+		Get_Layers(layers, layer->m_ChildLayers[i]);
 	}
 
 }
 
 
-std::vector<wxString> CWMS_Capabilities::Proj_Intersect(std::vector<CWMS_Layer*> & layers  )
-{
-	std::vector<wxString> intersProjs;
-	std::vector<wxString> intersProjsTemp;
-
-	if(layers.size() > 0)
-	{
-		for(int i_proj = 0; i_proj <  layers[0]->Get_Projections().size(); i_proj++ )
-		{
-			intersProjs.push_back(layers[0]->Get_Projections()[i_proj].m_Projection);
-		}
-	}
-
-	for(int i_Num = 1; i_Num < layers.size(); i_Num++)
-	{
-
-		intersProjsTemp.clear();
-		std::vector<class CWMS_Projection> projections = layers[i_Num]->Get_Projections();
-
-		for(int i_proj = 0; i_proj < projections.size(); i_proj++ )
-		{
-			bool isInside =false;
-			for(int i_intersecPproj1 = 0; i_intersecPproj1 < intersProjs.size(); i_intersecPproj1++ )
-			{
-				if( !projections[i_proj].m_Projection.Cmp(intersProjs[i_intersecPproj1]) )
-				{
-					isInside = true;
-					break;
-				}
-			}
-			if(isInside) intersProjsTemp.push_back( projections[i_proj].m_Projection );
-		}
-		intersProjs = intersProjsTemp;
-	}
-
-	return intersProjs;
-}
 

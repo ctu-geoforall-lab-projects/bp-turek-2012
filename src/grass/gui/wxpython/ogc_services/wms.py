@@ -134,7 +134,8 @@ class WMSDialog(OGCDialog):
         self.panel.SetSizer(dialogSizer)
         dialogSizer.Fit(self.panel)
         self.Layout()
-        
+   
+    
     def OnCancel(self, event):
         """!Close the dialog"""
         self.Close()
@@ -239,11 +240,11 @@ class WMSCapabilities(object):
         else:
             self.proj_tag = "SRS"
 
-        cap_node = root_node.find(self.xml_h.ns("Capability"))
-        if cap_node is None:
+        self.cap_node = root_node.find(self.xml_h.ns("Capability"))
+        if self.cap_node is None:
             raise GException(_("Missing <%s> tag in capabilities XML file"), "Capability")
         
-        root_layer_node = cap_node.find(self.xml_h.ns("Layer"))
+        root_layer_node = self.cap_node.find(self.xml_h.ns("Layer"))
         if root_layer_node is None:
             raise GException(_("Missing <%s> tag in capabilities XML file"), "Layer")
         
@@ -266,6 +267,57 @@ class WMSCapabilities(object):
             parent_layer.child_layers.append(layer)
         
         return id
+
+
+    def getFormats(self, event):
+       
+        request_node = self.cap_node.find(self.xml_h.ns("Request"))
+        if  get_map_node is None:
+            return None; 
+
+        get_map_node = request_node.find(self.xml_h.ns("GetMap"))
+        if  get_map_node is None:
+            return None;
+         
+        format_nodes = get_map_node.findall(self.xml_h.ns("Format"))
+ 
+        formats = []
+        for node in format_nodes:
+            formats.append[node.text]
+
+        return formats
+
+    def getProjIntersection(self, layers):
+
+        intersec_projs = []
+
+
+        firsIt = True
+        for layer in layers:
+            projs = layers[0].findall(self.xml_h.ns(self.proj_tag)) 
+
+            if firsIt:  
+                  intersec_projs = projs 
+                  firsIt = False
+                  continue
+
+            tmp_intersec_proj
+            for intersec_proj in intersec_projs:
+
+                for proj in projs:
+
+                    if proj.text == intersec_proj.text:
+
+                        tmp_intersec_proj.append(proj)
+                        break
+        
+            intersec_proj = tmp_intersec_proj
+
+        projs = []
+        for node in  intersec_proj:
+            projs.append(intersec_proj.text)
+
+        return projs
 
 class WMSLayer(object):
     def __init__(self, layer_node, parent_layer, id, xml_h, proj_tag):

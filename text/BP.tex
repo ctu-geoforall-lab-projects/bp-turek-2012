@@ -467,7 +467,268 @@ WMS dotazu typu GetMap. Pomocí modulu nelze zobrazit nabídku parametrů pro do
 
  V GRASS GIS již existuje modul r.in.wms, který umožňuje získání dat z WMS serveru. Tento modul byl původně napsán jako shell skript. V GRASS 7 byly všechny shell skript moduly přepsány do jazyka Python.      
 
+\section{WMS modul pro GRASS}
+
+Jelikož původně GRASS neměl žádné GUI, jeho moduly jsou přizpůsobeny pro práci v příkazové řádce. Každý modul si lze představit jako funkci, která má definované vstupní argumenty a určené výstupy. Nevýhodou tohoto 
+přístupu je, že modul není schopen s uživatelem komunikovat za běhu. Uživatel může jeho chování ovlivnit jen pomocí argumentů, které jsou zadány před spuštěním.
+
+Z tohoto důvodu implementace modulu odpovídá dotazu typu GetMap. Kdy uživatel musí zadat parametry tohoto dotazu a modul se postará a stažení rastru, jeho import do GRASS a případné další úpravy. 
+
+
+Tento fakt ovšem nebrání úplné interaktivní implementaci podpory WMS do GRASS GIS. Je ji ovšem potřeba rozdělit do dvou částí. První částí je vytvoření WMS modulu, který umožní pracovat s WMS daty i uživatelům, jenž používají
+pouze příkazovou řádku.  Do GUI programu je pak možné implementovat interaktivní část.
+
+
+\subsection{Analýza původního stavu}
+
+ V GRASS GIS již existuje modul r.in.wms umožňující získání WMS dat.
+Velkým problémem tohoto modulu je rozdělení jeho kódu do 8 souborů, což jej činí velmi nepřehledným. 
+Tento modul byl původně napsán jako shell skript. V GRASS 7 byly všechny moduly v shell skript  přepsány do jazyka Python, což také nepřispělo k jeho zpřehlednění. 
+
+Ještě větším problémem však je, že tento modul selhává při komunikaci s mnoha WMS servery. Z vlasní zkušenosti musím konstatovat, že při používání modul více selhával, než pracoval správně.
+
+Na základě těchto faktů bylo rozhodnuto, že se WMS modul pro GRASS vytvoří od základů znova. Případná oprava chyb ve stávajícím modulu a reorganizace kódu by byla mnohem problematičtější a časově náročnější.
+
+\newpage
+
+\subsection{Stanovení cílů implementace}
+
+Návrh struktury modulu byl realizován na základě těchto požadavků:
+\begin{itemize}
+  \item Modul bude plně podporovat všechny možnosti dotazu GetMap.
+  \item Modul bude komunikovat se serverem prostřednictvím knihovny GDAL\footnote{\url{www.gdal.org/}}  a také pomocí vlastní implementace 
+  \item WMS severy mají nastaveny limity pro přenos dat, aby zabránily dotazům, které by je nadměrně zatížily. Tyto limity jsou dány formou maximálních hodnot parametrů WIDTH a HEIGHT dotazu GetMap. 
+        Modul bude umět požadavek rozdělit na více WMS dotazů a získat tak požadovaný rastr po částech tzv. dlaždích, které posléze složí do jednoho rastru.
+  \item Důležitým prvkem při práci v systému GRASS GIS je lokace. Lokace sdružuje data, která mají stejnou projekci. Její podmnožinou je mapset, který seskupuje data do logických celků. 
+        Na začátku práce v GRASS GIS si uživatel vybere lokaci ve které chce pracovat. Následná práce je svázána s touto lokací a s  jejím souřadnicovým systémem.
+ 
+        Pokud by uživatel chtěl získat rast z WMS serveru, který neposkytuje data v projekci lokace,  musel by nejprve vytvořit lokaci v projekci WMS dotazu a poté tyto data
+         manuálně transformovat a zkopírovat do pracovní lokace.
+	
+	Proto bude modul schopen obdržená data automaticky transformovat  do souřadnicového systému lokace, pokud se jejich projekce bude lišit. 
+  \item Jelikož existují další rozšíření standartu WMS, jako například Web Map Tile Service \footnote{\url{http://www.opengeospatial.org/standards/wmts}}, struktura modulu umožní snadnou implementaci 
+        těchto rozšíření do existujícího kódu. 
+  \item Vstupní argumenty modulu budou kompatibilní s modulem r.in.wms. Některé nevýznamné argumenty, které nemají vliv na funkčnost modulu, mohou být vynechány.
+  \item Jako dplňkovou funkci bude modul schopen vypsat  na standartní výstup XML soubor z odpovědi GetCapabilities. Další zpracování toto výstupu bude součástí GUI.  
+ \end{itemize}
+
+
+
+\subsection{Volba způsubu implemntace}
+
+V GRASS GIS verze 7 mohou být moduly implemntovány v jazyce C nebo Python. V jazyce C se implementují moduly, které jsou náročné na vypočetní výkon počítače. 
+Rychlost je vykoupena značně delším vývojovým cyklem, protože je programátor v C nucen se starat o mnoho věcí, o které se Python postará sám.
+
+Koncepce WMS modulu byla zvolena tak, aby neprováděl žádně složité výpočetní operace, ale aby pro tyto typy operací byly využity již implementované funkcionality 
+ostatních GRASS modulů nebo knihoven. Proto byl vybrán jazyk Python. 
+
+Pro práci modulu se staženým rastrem jako je reprojekce a spojení dlaždic byla zvolena knihovna GDAL, která je součástí standardní instalace GRASS.
+
+Tato open source knihovna umožňuje čtění, zápis a reprojekci rastrů.  
+Základním prvkem knihovny, který reprezentuje rastrová data je dataset.  Každý dataset reprezentuje rastrová data v určitém formátu, s nimiž pracuje pomocí driveru. Driver je třída, která je schopná číst a zapisovat data v určitém formátu. 
+
+\subsection{Vstupních argumenty modulu}
+
+
+Většina vstupních argumentů reprezentuje jednotlivé parametry dotazu GetMap. Počet řádků (HEIGHT), sloupců (WIDTH) a geografický rozsah dat (BBOX) 
+jsou reprezentovány pomocí regionu. Region v GRASS je datová struktura, která definuje oblast na základě obdélníku. Tento obdélník je dán mezními kartografickými  souřadnicemi v každé ose a počtem řádků a sloupců pro rastr. Každý region je vztažen k určité projekci, která je totožná s projekcí lokace, ve které je uložen.
+
+Pomocí regionu se určuje rozsah, na kterém bude aplikována činnost modulů.
+Oblastí vně regionu nejsou do výpočtů zahrnuty. Vyjímkou jsou moduly, které data načítají, jako třeba modul r.in.gdal. Tyto moduly implicitně načítají data v celém jejich rozsahu, bez ohledu na výpočetní region. 
+
+Vstupní argumenty, které jsou nad rámec parametrů dotazu GetMap, se týkají dlaždicování. Modul umožnuje zadání maximálního počtu řádků 
+a slopuců v jednom WMS dotazu. Na základě těchto hodnot se rozdělí získání dat z WMS serveru do několika dotazů a výsledný rastr je složen z rastů získaných těmito dotazy. 
+   
+
+
+\subsection{Implemntace modulu}
+
+TODO UML Diagram
+
+Třída WMSBase je abstraktní třída, která vykonává ty funkce, které se netýkají komunikace s WMS serverem. Tato komunikace je implementována v odvozených WMSGDALDrv a WMSDrv.
+
+\subsubsection{Třída WMSBase}
+
+
+Hlavní funkcí třídy WMSBase je výpočet parametrů pro komunikaci s WMS serverem, import již stažených dat do lokace a dodatečné úpravy těchto dat pomocí modulů GRASS. 
+
+Třída obsahuje tyto důležité metody:  
+
+\begin{itemize}
+  \item \_GetCapabilities - Vytvoří a pošle WMS serveru dotaz typu GetCapabilities, následně obdrženou odpověď vypíše na standardní výstup a tímto se běh modulu ukončí. 
+  \item \_GetMap - Tato metoda postupně volá níže zmíněné metody v pořadí v jakém jsou vedeny. 
+  \item \_initializeParameters - Metoda inicializuje proměnné, potřebné pro další běh modulu. Jde o uložení hodnot ze slovníků vstupních argumentů do separátních proměnných a také získání hodnot ze zvoleného regionu.
+  \item \_computeBbox - Pokud se liší projekce, ve které budou data staženy z WMS serveru a projekce pracovní lokace, je potřeba souřadnice, které vymezují region transformovat do projekce WMS dotazu, aby bylo možně definovat parametr BBOX ve správněm souřadnicovém systému.
+                        Zpravidla výsledkem transformace není obdélník se stranami rovnoběžnými se souřadnicovými osami systému, ale obecný čtyřúhelník. Protože parametr BBOX WMS dotazu GetMap  musí být uveden  v tomto obdélníku, jsou vybrány extrémní souřadnice, které tvoří obdélník rovnoběžný s osami souřadnicového systému.      
+  \item \_download - Jedná se o metodu virtuální, definovanou v potomcích třídy, která dotazem GetMap stáhne rastr a uloží jej do dočasného souboru. Zpravidla jsou rastrová data poskytovaná WMS serverem tříkanálová reprezentující RGB systém barev. Pokud jde o rastr s průhlednými plochami, obsahuje ještě alfa kanál, který definuje průhlednost pixelů. Návratovou hodnotou metody je cesta k souboru s rastrem.
+  \item \_createOutputMap - Pokud je to potřeba, tato metoda nejprve pomocí utility gdalwarp knihovny GDAL transformuje rastr do projekce lokace. Transformovaný rastr je uložen do nového souboru. 
+                            Jelikož rastr je matice o určitých počtech sloupců a řádků, čemuž ale tvar transformovaného rastru zpravidla již neodpovídá, je potřeba mít informaci o tom, který pixel odpovídá původnímu rastru 
+                            a který pixel již nereprezentuje data původního rastru. Tato informace je zahrnuta do alfa kanálu. Pixely, které do rastru nepatří mají hodnotu v alfa kanálu plně průhlného pixelu.  Pokud transformovaný rastr neobsahuje alfa kanál, utilita gdalwarp jej přidá.
+
+Posléze pomocí modulu r.in.gdal importuje rastrová data do lokace.
+Modul r.in.gdal naimportuje rastr do vrstev po jednotlivých kanálech. Tyto vrstvy jsou pomocí modulu  r.composite sloučeny do jedné barevné vrstvy. 
+
+Aby byla správně nastavena průhlednost, před spuštěním modulu r.composite, se vytovří z alfa kanálu inverzní maska. Maska se v GRASS GIS používá v těch případech, kdy rozsah dat, nad nimiž bude modul pracovat nelze vyjádřit pomocí regionu. Proto se definuje vrstva s názvem MASK. Pixely, kde je maska definována 
+nejsou brány při výpočtu v úvahu. 
+
+Při použití masky vytvoří modul r.composite barevný rastr, který má správny rozsah.
+
+\end{itemize}
+Modul za svého běhu vyprodukuje několik dočasných souborů. Tyto dočasné soubory jsou smazány ihned poté, co již nejsou potřeba. Pokud však uživatel neočekávaně přeruší běh programu, může se stát, že některý soubor nebude smazán. Aby se tomuto zabránilo,
+je v destruktoru třídy, který se volá i při neočakávaném ukončení modulu, provedeno smazání těchto souborů, pokud nebyly odstraněny. Toto je provedeno i s vrstvami, které reprezentují jednotlivé barevné kanály a maskou. 
+
+
+
+
+
+\subsubsection{Třída WMSGDALDrv}
+
+Tato třída přistupuje k datům z WMS serveru prostřednictvím WMS driveru knihovy GDAL. Parametry WMS dotazu jsou driveru předány ve formě XML souboru \footnote{\url{http://www.gdal.org/frmt_wms.html}}. 
+Driver následně stáhne data a uloží je do souboru ve formátu GeoTiff. 
+
+
+
+\subsubsection{Třída WMSDrv}
+
+Tato třída komunikuje se serverem přímo, bez použití další knihovny. Nejprve je ze vstupních parametrů vytvořen WMS dotaz. 
+Pak následuje výpočet rozměrů dlaždic v souřadnicovém systému projekce, rozměru dlaždic v pixelech a jejich počet. Na základě těchto hodnot jsou v cyklu staženy jednotlivé dlaždice, kdy je k WMS dotazu přidán parametr BBOX pro konkrétní dlaždici, tento dotaz je poslán WMS serveru a do dočasného
+souboru je uložen stažený rastr. Spojování dlaždic do jednoho rastru je řešeno pomocí knihovny GDAL. Při prvním průchodu cyklu se vytvoří nový dataset, kde se dlaždice postupně, tak jak jsou stahovány, spojují. 
+
+\subsection{Problémy a jejich řešení}
+
+Při implementaci třídy WMSDrv se vyskytl problém při dlaždicování.
+Při stažení barevného jednokanálového rastru (např. PNG, GIF) s přiloženou globální tabulkou barev vznikl po spojení jednotlivých dlaždic rastr, který tuto tabulku neobsahoval.
+
+Protože v tomto případě konkrétní barvy jednotlivých kanálů jsou definovány až v tabulce barev, není možné bez této tabulky správně interpretovat hodnoty pixelů, které  zde představují pouze odkazy na položky tabulky. V různých dlaždicích jsou stejné barvy definovány jinými položkami tabulky barev a hodnota pixelů na ně odkazující se v nich liší. 
+Při spojování dlaždic knihovna GDAL nebrala tabulku barev v úvahu a interpretovala přímo hodnoty těchto pixelů. Výsledný rastr se spojenými dlaždicemi vypadal tatko: 
+
+ \includegraphics[scale=0.4]{figures/color_table_problem.png}
+
+
+
+Tento problém byl vyřešen pomocí upraveného kódu GDAL utility pct2rgb \footnote{\url{www.gdal.org/pct2rgb.html}}. Tento kód obsahuje metoda \_pct2rgb.
+Tato metoda vytvoří 4 kanálový dataset (RGB + alfa vrstva), a do jednotlivých kanálů jsou pixel po pixelu přiřazovány jejich hodnoty z tabulky barev. 
+
+\newpage
+
+\section{ WMS modul pro SAGA GIS}
+
+V SAGA GIS je koncept modulu odlišný od GRASS. Jedním z důvodů tohoto rozdílu může být to, že SAGA je software mnohem mladší než GRASS, proto v době,kdy byl jeho vývoj započat, bylo grafické rozhraní programů již standardem, narozdíl 
+ od počátku vývoje GRASS GIS. 
+
+Proto moduly SAGA GIS mohou být více interaktivní a za běhu komunikovat s uživatelem.
+
+\subsection{Analýza původního stavu}
+
+V aktuální verzi 2.0.8 SAGA GIS nově obsahuje experimentální knihovnu Garden - Web Service Data Access, která obsahuje modul Import a Map via Web Map Service (WMS), který umožňuje získat data z WMS serveru.
+Modul funguje tak, že po spuštění na vytvoří ze zadané URL adresy dotaz GetCapabilities, na základě odpovědi vytvoří dialog, ve kterém uživatel může vybrat parametry pro získání rastru z WMS serveru. 
+
+Tento koncept modulu je pro uživatele velmi přívětivý, jelikož stačí znát pouze URL adresu a o vše ostatní se postará modul. Uživatel si pak vybere z možností, které server nabízí. 
+
+Modul má tyto nedostatky:
+
+\begin{itemize}
+\item Nesprávně zpracovává Capabilities soubor, a proto vygeneruje dialog, který nedovoluje uživateli vybrat si ze všech možností, které server nabízí. Omezení dialogu jsou tato:
+\begin{itemize}
+ \item     Negeneruje strom všech vrstev, ale v dialogu nabídne pouze vrstvy, které jsou přímými potomky kořenové vrstvy.
+ \item 	   Nelze určit pořadí vrstev, v jakém budou  zobrazeny na výsledné mapě
+ \item 	   Neumožňuje výběr stylu vrstvy 
+ \item 	   Při načítání vrstev nebere v úvahu dědičnost	   
+\end{itemize}
+\item Při stahování dat ze serveru, nepodporuje dlaždicování. 
+\end{itemize}
+
+
+ 
+\subsection{Stanovení cílů implementace}
+
+
+Základní koncept modulu bude stejný jako u stávajícího. To znamená, že modul nejprve získá Capabilites soubor z WMS serveru, vygeneruje pro něj nabídku a na základě zvolených hodnot pomocí 
+dotazu GetMap stáhne požadovaný mapový rast a naimportuje jej do programu. 
+
+Při implementaci by měly být naplněny tyto cíle:
+\begin{itemize}
+\item  Modul bude schopen správně schopen zpracovat Capabilities soubor ve standardu 1.1.1 a 1.3.0.  Jelikož ne všechny WMS servery plně podporují WMS standardy, bude napsán tak, aby si poradil s těmi prohřežky proti standardu, které jsou nejčastější, jako je například neuvedení informace o stylech vrstvy.  
+\item Nabídka parametrů umožní uživateli využití všech možností WMS dotazu GetMap.
+\item Modul bude schopen transformovat rastr do uživatelem požadováného zobrazení. V SAGA GIS neexistuje ekvivalent lokace jako v GRASS GIS. Z vrstvami lze pracovat v libovolném zobrazení najednou. Existuje i modul,
+      který umí trasformovat rastr do jiné projekce. Tato funkcionalita ulehčí uživateli práci, protože často se stává že WMS server neposkytuje data v uživatelem požadované projekci. 
+Také modul umožní zadat hodnotu parametru BBOX v souřadnicích požadované projekce a za běhu modulu, by se měly tyto souřadnice transformovat do projekce WMS dotazu.
+\item Umožní implementovat další rozšíření WMS standardu. 
+\end{itemize}
+
+
+\subsection{Volba způsubu implemntace}
+
+Modul byl implementován v jazyce C++, ve kterém je napsán celý program SAGA a všechny jeho moduly. Implementace by měla využít objektových rysů jazyka C++, které mohou ulehčit budoucí rozšířování 
+modulu o podporu dalších nádstaveb WMS a celkově pomoci vytvořit čitelnější kód. 
+
+Další důležitou volbou, před vlastní implementací modulu, bylo rozhodnutí, zda v tomto modulu spouštět další SAGA moduly, které  by například transformovaly rastr do požadované projekce nebo transformormovaly souřadnice. 
+
+Nakonec bylo rozhodnuto tyto operace provést před importem do SAGA GIS pomocí knihovny GDAL (reprojekce) a knihovny PROJ4 (transformace souřadnic), což by umožnilo import již finálního rastru do SAGA GIS a odpadla by 
+pak potřeba tento rastr ještě v SAGA GIS transformovat. 
+
+\subsubsection{Knihovna PROJ4}
+
+Knihovna PROJ4 \url{http://trac.osgeo.org/proj/} je open source projekt, který dovoluje transformovat souřadnice do různých projecí, které jsou součástí této knihovny.Také umožňuje definovat vlastní 
+projekce. Tuto knihovnu používá např. GRASS GIS, SAGA GIS nebo GDAL.
+
+\subsection{Moduly v SAGA GIS}
+
+Každý modul v SAGA GIS je potomkem třídy CSG\_Modul. Vstupní argumenty modulu, které se zadávají před spuštěním jsou uvedeny v konstruktoru třídy modulu.
+
+Argumenty jsou prvky instance třídy CSG\_Parameters Parameters. 
+Metoda OnExecute je další metoda, kterou musí každý modul obsahovat. Tato metoda je volána při spuštění modulu. 
+
+
+\subsection{Implemntace modulu}
+Modul je implementován jako přímý potomek třídy CSG\_Module. Tato třída se nazývá CWMS\_Import a má na starosti všechny funkce, které jsou přímo spojeny s programem SAGA GIS.
+
+Jedná se o vytvoření dialogů na základě Capabilities souboru, který je stažen a načten  skrz členy třídy CWMS\_Base a o import rastru do programu. 
+
+\subsubsection{Třída CWMS\_Base}
+
+Tato třída nejprve pomocí instatnce CWMS\_Capabilities, získá Capability data z WMS serveru. Na základě těchto dat třída uživatel vybere parametry dotazu GetMap. 
+
+Potom je spuštěna metoda GetMap, která stáhne a transfomruje rastr do požadované projekce. Tado metoda vrátí cestu k souboru, ve kterém je uložena již výsledná rastrová mapa určená k načtení do programu.
+Struktura a funkce této metody jsou velmi podobné WMS modulu pro GRASS. Největším rozdílem je to, že nenačítá výslednou mapu do programu, protože k tomu je potřeba využít neveřejných členů třídy CSG\_Module, 
+které nejsou z této třídy dostupné. Toto by šlo obejít deklarováním CWMS\_Base přítelem CWMS\_Import, což je potomek CSG\_Module. Tato deklarace však porušuje zapouzdřenost, jeden za základních principů objektově orientovaného
+programování. Proto je metoda \_Import\_Map součástí třídy CWMS\_Import, z níž může přistupovat k těmto členům.
+
+Metoda GetMap volá tři neveřejné metody v tomto pořadí:
+\begin{itemize}
+ \item \_ComputeBbox - Transformuje souřadnice obdélníku, pokud jsou zadány v jiné projekci než, kterou nabízí WMS server. Transformace je provedena pomocí knihovny PROJ4, která je standardně přítomna v každé SAGA instalaci. Z transformovaných bodů jsou vybrány extrémní souřadnice, které pak definují parametr BBOX WNS dotazu. 
+ \item \_Download - Tato metoda je virtuální a je pouze v této třídě deklarovaná. 
+ Návratovou hodnotou této metody je rastr, ve kterém jsou již spojeny dlaždice
+ z jednotlivých WMS dotazů.
+ \item \_GdalWarp - Tato metoda pomocí knihovny GDAL, pokud je to potřeba, transformuje stažený rastr, do výsledné projekce. Jedná se o modifikovaný kód z \url{http://www.gdal.org/warptut.html}.
+\end{itemize}
+
+\subsubsection{Třída CWMS\_Gdal\_drv}
+
+Členění této třídy a funkce jejich metod jsou v zásadě stejné jako u třídy WMSGDALDrv v GRASS modulu. Metoda \_CreateGdalDrvXml vytovří XML soubor s parametry pro GDAL WMS driver, 
+který metoda  \_Download použije pro stažení rastru z WMS serveru. 
+
+
+\subsubsection{Třída CWMS\_Capabilities}
+
+Tato  třída pomocí metody Create, jejíž argumentem je URL adresa WMS serveru, vytvoří WMS dotaz GetCapabilities a následně načte do své struktury XML soubor s odpovědí.
+
+K načtení XML souboru jsou použity třídy knihovny WxWidgets, která je součástí programu SAGA. Pomocí objektu wxXmlDocument této knihovny je načten XML soubor a vytvořena datová struktura tohoto souboru. Ekvivalentem XML elementu v této struktuře je třída wxXmlNode, která obsahuje odkaz na rodiče a na své přímé potomky. 
+
+Pokud by neexistovala dědičnost ve stromu elementů <Layer>, bylo by možné zjistit všechny informace o vrstvě z jejich přímých potomků a uchovat v třídě CWMS\_Capabilities pouze odkaz na kořenový element XML souboru. Protože však tato dědičnost existuje, bylo potřeba nějakým způsobem ke každé vrstvě seskupit všechny její elementy, včetně zděděných. 
+  
+
+Proto byla vytvořena třída  CWMS\_Layer, která obsahuje ukazatel na rodičovskou vrstvu a na její přímé potomky ve stromu. Dalším členem třídy je kontejner map s názvem m\_LayerElms, který obsahuje položky, mající jako klíč název elementu, který je přímým potomkem elemetnu <Layer> a vektor ukazatelů na objekty wxXmlNode reprezentující tyto elementy. Tento vektor zahrnuje všechny elementy, včetně elementů získaných dědičností. Jelikož se jedná o ukazatele na objekty, nejsou ukládány duplicitní informace, ale všechny vrstvy, které dědí stejný element odkazují na tentýž objekt. 
+
+Toto uspořádání je vytvořeno rekurzivně, kdy je strom elementů <Layer> procházen od kořene k jeho listům. Při vytvoření každé vrstvy je zavolána metoda Create třídy   CWMS\_Layer, která z kontejneru m\_LayerElms  rodičovského objektu třídy, který je již díky rekurzi vytvořen, vybere ty objekty, které dědí a naplní vlastní kontejner m\_LayerElms. Aby kontejner obsahoval všechny přímé potomky elementu <Layer>, jsou potom přidány elementy, které se nedědí. 
+
+\subsection{Ukázka práce modulu}
+
+
 \end{document}
+
+
+
 
 
 
