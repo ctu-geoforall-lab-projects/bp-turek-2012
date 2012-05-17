@@ -1283,35 +1283,36 @@ které mohou reagovat jen na akce vyvolané myší nebo klávesnicí.
 \newpage 
 \section{Závěr}
 
-Díky této bakalářské práci bylo vylepšeno dostupnost daty
-poskytovanými WMS servery v programech GRASS GIS a SAGA GIS.
+V rámci této bakalářské práce byla vylepšena podpora WMS v programech 
+GRASS a SAGA. 
 
-V programu GRASS GIS byl vytvořen WMS modul, který ve srovnání s
+V programu GRASS byl vytvořen WMS modul, který ve srovnání s
 původním WMS modulem r.in.wms, je schopen komunikovat s mnohem větším
-počtem WMS serverů a byl navržen tak, aby byl v budoucnu lehce
-rozšiřitelný o podporu dalších rozšíření WMS standardu, a tímto
-umožnit uživatelům GRASS mnohem snadnější přístup k zdrojům dat, které
-mu nyní zůstávají zapovězeny.
+počtem WMS serverů a byl navržen tak, aby byl lehce
+rozšiřitelný o podporu dalších nadstaveb WMS standardu, čímž by 
+uživatelům GRASS umožnil přístup k zdrojům dat, které jim nyní zůstávají 
+do velké míry zapovězeny.
 
-Také byly učiněny některé kroky v rámci GRASS GUI, které by měly vést
-k tomu, že podpora WMS v GRASS GIS bude srovnatelná s programy ArcGis
-nebo QGis, které jsou v tomto špičkou mezi GIS programy.
+Také byly učiněny některé kroky v rámci integrace  podpory WMS 
+do GRASS GUI, které by měly v budoucnu vést ke srovnatelné práci s WMS daty
+v GRASS jako programech ArcGis nebo QGis, které jsou v tomto špičkou 
+mezi GIS aplikacemi.
 
-V SAGA GIS byl stávající WMS modul, který měl velké nedostatky, kvůli
-nimž nebylo možno u velkého počtu serveru získat data, která nabízejí,
-přepracován a jeho funkcionalita rozšířena.
+V SAGA byl stávající WMS modul, který má velké nedostatky přepracován
+ a jeho funkcionalita rozšířena do takového stavu, že nyní je schopen 
+ úspěšně komunikovat s mnohem větším počtem WMS serverů.
 
 Pro mne bylo velmi zajímavou zkušeností si vyzkoušet práci na dvou
 různých open source projektech. Co se týče projektu SAGA, je zde velmi
-znát, že jeho komunita je mnohem menší než u GRASS GIS. To se zejména
+znát, že jeho komunita je mnohem menší než u GRASS. To se zejména
 projevuje na téměř neexistující dokumentaci pro vývojáře, a proto je
 potřeba většinu informací vypátrat přímo ve zdrojovém kódu.
 
-Velmi zajímavé bylo také vyzkoušet si vývoj v podstatě velmi podobných
+Další velkou zkušeností byl vývoj v podstatě velmi podobných
 funkcionalit řešící stejný problém ve dvou odlišných programovacích
-jazycích Python a C++.  Díky tomu jsem měl možnost zjistit, že C++ je
-sice velmi silný nástroj a efektivní programovací jazyk, jenže jeho
-odvrácenou stranou ve srovnání s jazykem Python je, že vývoj v tomto
-jazyce je mnohem delší a pracnější.
+jazycích Python a C++.  Díky tomu jsem měl možnost si prakticky potvrdit
+známý fakt, že C++ je sice velmi silný nástroj a efektivní programovací 
+jazyk, jehož odvrácenou stranou ve srovnání s jazykem Python je mnohem 
+delší a pracnější vývoj.
 
 \end{document}
